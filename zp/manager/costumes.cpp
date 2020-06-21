@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          costumes.cpp
  *  Type:          Manager 
- *  Description:   Costumes table generator.
+ *  Description:   API for loading costumes specific variables.
  *
- *  Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)
+ *  Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,18 +20,13 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
 
 /**
- * Array handle to store costumes data.
- **/
-ArrayList arrayCostumes;
-
-/**
- * Costumes config data indexes.
+ * @section Costumes config data indexes.
  **/
 enum
 {
@@ -46,10 +41,12 @@ enum
     COSTUMES_DATA_HIDE,
     COSTUMES_DATA_MERGE,
     COSTUMES_DATA_LEVEL
-}
+};
+/**
+ * @endsection
+ **/
 
-#if defined USE_DHOOKS
- /**
+/**
  * Variables to store DHook calls handlers.
  **/
 Handle hDHookSetEntityModel;
@@ -58,175 +55,177 @@ Handle hDHookSetEntityModel;
  * Variables to store dynamic DHook offsets.
  **/
 int DHook_SetEntityModel;
-#endif
-
-/**
- * Client is joining the server.
- * 
- * @param clientIndex       The client index.  
- **/
-void CostumesClientInit(const int clientIndex)
-{
-    #if defined USE_DHOOKS    
-    // Hook entity callbacks
-    DHookEntity(hDHookSetEntityModel, true, clientIndex);
-    #else
-        #pragma unused clientIndex
-    #endif
-}
-
-/**
- * Creates commands for costumes module. Called when commands are created.
- **/
-void CostumesOnCommandsCreate(/*void*/)
-{
-    // Hook commands
-    RegConsoleCmd("zhatmenu", CostumesCommandCatched, "Open the costumes menu.");
-}
-
-/**
- * Handles the <!zhatmenu> command. Open the costumes menu.
- * 
- * @param clientIndex       The client index.
- * @param iArguments        The number of arguments that were in the argument string.
- **/ 
-public Action CostumesCommandCatched(const int clientIndex, const int iArguments)
-{
-    // Open the costumes menu
-    CostumesMenu(clientIndex);
-    return Plugin_Handled;
-}
 
 /**
  * Сostumes module init function.
  **/
-void CostumesInit(/*void*/)
+void CostumesOnInit(/*void*/)
 {
-    #if defined USE_DHOOKS
-    // Load offsets
-    fnInitGameConfOffset(gServerData[Server_GameConfig][Game_SDKTools], DHook_SetEntityModel, "SetEntityModel");
+    // If module is disabled, then stop
+    if (!gCvarList.COSTUMES.BoolValue)
+    {
+        // Validate loaded map
+        if (gServerData.MapLoaded)
+        {
+            // Is costumes was load
+            if (gServerData.Costumes != null)
+            {
+                // Destroy costumes
+                CostumesOnUnload();
+            }
+        }
+        return;
+    }
+    
+    // Validate loaded map
+    if (gServerData.MapLoaded)
+    {
+        // No costumes?
+        if (gServerData.Costumes == null)
+        {
+            // Resets value
+            gCvarList.COSTUMES.BoolValue = false;
+        
+            // Log failure
+            LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "You can't enable costume module after map start!");
+            return;
+        }
+    }
 
-    /// CCSPlayer::SetModel(char const*)
+    // Load offsets
+    fnInitGameConfOffset(gServerData.SDKTools, DHook_SetEntityModel, /*CBasePlayer::*/"SetEntityModel");
+
+    /// CBasePlayer::SetModel(CBasePlayer *this, char const*)
     hDHookSetEntityModel = DHookCreate(DHook_SetEntityModel, HookType_Entity, ReturnType_Void, ThisPointer_CBaseEntity, CostumesDhookOnSetEntityModel);
     DHookAddParam(hDHookSetEntityModel, HookParamType_CharPtr);
-    #endif
+    
+    // Validate hook
+    if (hDHookSetEntityModel == null)
+    {
+        // Log failure
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "GameData Validation", "Failed to create DHook for \"CBasePlayer::SetEntityModel\". Update \"SourceMod\"");
+        return;
+    }
 }
 
 /**
- * Loads costumes data from file.
+ * @brief Loads costumes data from file.
  **/ 
-void CostumesLoad(/*void*/)
+void CostumesOnLoad(/*void*/)
 {
     // Register config file
     ConfigRegisterConfig(File_Costumes, Structure_Keyvalue, CONFIG_FILE_ALIAS_COSTUMES);
 
-    // If module is disabled, then stop
-    if(!gCvarList[CVAR_GAME_CUSTOM_COSTUMES].BoolValue)
+    // If costumes is disabled, then stop
+    if (!gCvarList.COSTUMES.BoolValue)
     {
         return;
     }
-
+    
     // Gets costumes config path
-    char sCostumePath[PLATFORM_MAX_PATH];
-    bool bExists = ConfigGetCvarFilePath(CVAR_CONFIG_PATH_COSTUMES, sCostumePath);
+    static char sPathCostumes[PLATFORM_LINE_LENGTH];
+    bool bExists = ConfigGetFullPath(CONFIG_FILE_ALIAS_COSTUMES, sPathCostumes, sizeof(sPathCostumes));
 
     // If file doesn't exist, then log and stop
-    if(!bExists)
+    if (!bExists)
     {
         // Log failure
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "Missing costumes config file: %s", sCostumePath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "Missing costumes config file: %s", sPathCostumes);
         return;
     }
 
-    // Sets the path to the config file
-    ConfigSetConfigPath(File_Costumes, sCostumePath);
+    // Sets path to the config file
+    ConfigSetConfigPath(File_Costumes, sPathCostumes);
 
     // Load config from file and create array structure
-    bool bSuccess = ConfigLoadConfig(File_Costumes, arrayCostumes);
+    bool bSuccess = ConfigLoadConfig(File_Costumes, gServerData.Costumes);
 
     // Unexpected error, stop plugin
-    if(!bSuccess)
+    if (!bSuccess)
     {
-        ///LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "Unexpected error encountered loading: %s", sCostumePath);
-        return;
-    }
-
-    // Validate costumes config
-    int iSize = arrayCostumes.Length;
-    if(!iSize)
-    {
-        ///LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "No usable data found in costumes config file: %s", sCostumePath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "Unexpected error encountered loading: %s", sPathCostumes);
         return;
     }
 
     // Now copy data to array structure
-    CostumesCacheData();
+    CostumesOnCacheData();
 
     // Sets config data
     ConfigSetConfigLoaded(File_Costumes, true);
     ConfigSetConfigReloadFunc(File_Costumes, GetFunctionByName(GetMyHandle(), "CostumesOnConfigReload"));
-    ConfigSetConfigHandle(File_Costumes, arrayCostumes);
+    ConfigSetConfigHandle(File_Costumes, gServerData.Costumes);
 }
 
 /**
- * Caches costumes data from file into arrays.
- * Make sure the file is loaded before (ConfigLoadConfig) to prep array structure.
+ * @brief Caches costumes data from file into arrays.
  **/
-void CostumesCacheData(/*void*/)
+void CostumesOnCacheData(/*void*/)
 {
     // Gets config file path
-    char sCostumesPath[PLATFORM_MAX_PATH];
-    ConfigGetConfigPath(File_Costumes, sCostumesPath, sizeof(sCostumesPath)); 
+    static char sPathCostumes[PLATFORM_LINE_LENGTH];
+    ConfigGetConfigPath(File_Costumes, sPathCostumes, sizeof(sPathCostumes)); 
     
+    // Opens config
     KeyValues kvCostumes;
     bool bSuccess = ConfigOpenConfigFile(File_Costumes, kvCostumes);
 
-    if(!bSuccess)
+    // Validate config
+    if (!bSuccess)
     {
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "Unexpected error caching data from costumes config file: %s", sCostumesPath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "Unexpected error caching data from costumes config file: %s", sPathCostumes);
+        return;
     }
 
+    // Validate size
+    int iSize = gServerData.Costumes.Length;
+    if (!iSize)
+    {
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "No usable data found in costumes config file: %s", sPathCostumes);
+        return;
+    }
+    
     // i = array index
-    int iSize = arrayCostumes.Length;
-    for(int i = 0; i < iSize; i++)
+    for (int i = 0; i < iSize; i++)
     {
         // General
-        CostumesGetName(i, sCostumesPath, sizeof(sCostumesPath)); // Index: 0
+        CostumesGetName(i, sPathCostumes, sizeof(sPathCostumes)); // Index: 0
         kvCostumes.Rewind();
-        if(!kvCostumes.JumpToKey(sCostumesPath))
+        if (!kvCostumes.JumpToKey(sPathCostumes))
         {
             // Log costume fatal
-            LogEvent(false, LogType_Error, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "Couldn't cache costume data for: %s (check costume config)", sCostumesPath);
+            LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "Couldn't cache costume data for: %s (check costume config)", sPathCostumes);
             continue;
         }
         
         // Validate translation
-        if(!TranslationPhraseExists(sCostumesPath))
+        StringToLower(sPathCostumes);
+        if (!TranslationPhraseExists(sPathCostumes))
         {
             // Log costume error
-            LogEvent(false, LogType_Error, LOG_CORE_EVENTS, LogModule_Costumes, "Config Validation", "Couldn't cache costume name: \"%s\" (check translation file)", sCostumesPath);
+            LogEvent(false, LogType_Error, LOG_GAME_EVENTS, LogModule_Costumes, "Config Validation", "Couldn't cache costume name: \"%s\" (check translation file)", sPathCostumes);
+            continue;
         }
 
         // Gets array size
-        ArrayList arrayCostume = arrayCostumes.Get(i);
+        ArrayList arrayCostume = gServerData.Costumes.Get(i);
         
         // Push data into array
-        kvCostumes.GetString("model", sCostumesPath, sizeof(sCostumesPath), ""); 
-        arrayCostume.PushString(sCostumesPath);                              // Index: 1
-        ModelsPrecacheStatic(sCostumesPath);
-        arrayCostume.Push(kvCostumes.GetNum("body", 0));                     // Index: 2
-        arrayCostume.Push(kvCostumes.GetNum("skin", 0));                     // Index: 3
-        kvCostumes.GetString("attachment", sCostumesPath, sizeof(sCostumesPath), "facemask");  
-        arrayCostume.PushString(sCostumesPath);                              // Index: 4
+        kvCostumes.GetString("model", sPathCostumes, sizeof(sPathCostumes), ""); 
+        arrayCostume.PushString(sPathCostumes);                               // Index: 1
+        DecryptPrecacheModel(sPathCostumes); 
+        arrayCostume.Push(kvCostumes.GetNum("body", 0));                      // Index: 2
+        arrayCostume.Push(kvCostumes.GetNum("skin", 0));                      // Index: 3
+        kvCostumes.GetString("attachment", sPathCostumes, sizeof(sPathCostumes), "facemask");  
+        arrayCostume.PushString(sPathCostumes);                               // Index: 4
         float vPosition[3]; kvCostumes.GetVector("position", vPosition);   
-        arrayCostume.PushArray(vPosition);                                   // Index: 5        
+        arrayCostume.PushArray(vPosition, sizeof(vPosition));                 // Index: 5        
         float vAngle[3]; kvCostumes.GetVector("angle", vAngle);
-        arrayCostume.PushArray(vAngle);                                      // Index: 6
-        kvCostumes.GetString("group", sCostumesPath, sizeof(sCostumesPath), "");  
-        arrayCostume.PushString(sCostumesPath);                              // Index: 7
-        arrayCostume.Push(ConfigKvGetStringBool(kvCostumes, "hide", "no"));  // Index: 8
-        arrayCostume.Push(ConfigKvGetStringBool(kvCostumes, "merge", "no")); // Index: 9
-        arrayCostume.Push(kvCostumes.GetNum("level", 0));                    // Index: 10
+        arrayCostume.PushArray(vAngle, sizeof(vAngle));                       // Index: 6
+        kvCostumes.GetString("group", sPathCostumes, sizeof(sPathCostumes), "");  
+        arrayCostume.PushString(sPathCostumes);                               // Index: 7
+        arrayCostume.Push(ConfigKvGetStringBool(kvCostumes, "hide", "no"));   // Index: 8
+        arrayCostume.Push(ConfigKvGetStringBool(kvCostumes, "merge", "off")); // Index: 9
+        arrayCostume.Push(kvCostumes.GetNum("level", 0));                     // Index: 10
     }
     
     // We're done with this file now, so we can close it
@@ -234,12 +233,121 @@ void CostumesCacheData(/*void*/)
 }
 
 /**
- * Called when configs are being reloaded.
+ * @brief Costumes module unload function.
+ **/
+void CostumesOnUnload(/*void*/) 
+{
+    // i = client index
+    for (int i = 1; i <= MaxClients; i++) 
+    {
+        // Validate client
+        if (IsPlayerExist(i, false)) 
+        {
+            // Remove current costume
+            CostumesRemove(i);
+        }
+    }
+}
+
+/**
+ * @brief Called when configs are being reloaded.
  **/
 public void CostumesOnConfigReload(/*void*/)
 {
-    // Reload costumes config
-    CostumesLoad();
+    // Reloads costumes config
+    CostumesOnLoad();
+}
+
+/**
+ * @brief Creates commands for costumes module.
+ **/
+void CostumesOnCommandInit(/*void*/)
+{
+    // Hook commands
+    RegConsoleCmd("zcostume", CostumesOnCommandCatched, "Opens the costumes menu.");
+}
+
+/**
+ * @brief Hook costumes cvar changes.
+ **/
+void CostumesOnCvarInit(/*void*/)
+{
+    // Creates cvars
+    gCvarList.COSTUMES = FindConVar("zp_costume");
+    
+    // Hook cvars
+    HookConVarChange(gCvarList.COSTUMES, CostumesOnCvarHook);
+}
+
+/**
+ * @brief Client has been joined.
+ * 
+ * @param client            The client index.  
+ **/
+void CostumesOnClientInit(int client)
+{
+    // Initialize id
+    static int iD[MAXPLAYERS+1] = {-1, ...};
+    
+    // If module is disabled, then stop
+    if (!gCvarList.COSTUMES.BoolValue)
+    {
+        // Validate hook
+        if (iD[client] != -1) 
+        {
+            // Unhook entity callbacks
+            DHookRemoveHookID(iD[client]); 
+            iD[client] = -1;
+        }
+        return;
+    }
+    
+    // Hook entity callbacks
+    iD[client] = DHookEntity(hDHookSetEntityModel, true, client);
+}
+
+/**
+ * @brief Client has been killed.
+ * 
+ * @param client            The client index.
+ **/
+void CostumesOnClientDeath(int client)
+{
+    // Remove current costume
+    CostumesRemove(client);
+}
+
+/**
+ * Console command callback (zcostume)
+ * @brief Opens the costumes menu.
+ * 
+ * @param client            The client index.
+ * @param iArguments        The number of arguments that were in the argument string.
+ **/ 
+public Action CostumesOnCommandCatched(int client, int iArguments)
+{
+    CostumesMenu(client);
+    return Plugin_Handled;
+}
+
+/**
+ * Cvar hook callback (zp_costume)
+ * @brief Costumes module initialization.
+ * 
+ * @param hConVar           The cvar handle.
+ * @param oldValue          The value before the attempted change.
+ * @param newValue          The new value.
+ **/
+public void CostumesOnCvarHook(ConVar hConVar, char[] oldValue, char[] newValue)
+{
+    // Validate new value
+    if (oldValue[0] == newValue[0])
+    {
+        return;
+    }
+    
+    // Forward event to modules
+    CostumesOnInit();
 }
 
 /*
@@ -247,58 +355,81 @@ public void CostumesOnConfigReload(/*void*/)
  */
 
 /**
- * Gets the amount of all costumes.
- *
- * native int ZP_GetNumberCostumes();
+ * @brief Sets up natives for library.
  **/
-public int API_GetNumberCostumes(Handle isPlugin, const int iNumParams)
+void CostumesOnNativeInit(/*void*/) 
+{
+    CreateNative("ZP_GetNumberCostumes",    API_GetNumberCostumes);
+    CreateNative("ZP_GetClientCostume",     API_GetClientCostume);
+    CreateNative("ZP_SetClientCostume",     API_SetClientCostume);
+    CreateNative("ZP_GetCostumeNameID",     API_GetCostumeNameID);
+    CreateNative("ZP_GetCostumeName",       API_GetCostumeName);
+    CreateNative("ZP_GetCostumeModel",      API_GetCostumeModel);
+    CreateNative("ZP_GetCostumeBody",       API_GetCostumeBody);
+    CreateNative("ZP_GetCostumeSkin",       API_GetCostumeSkin);
+    CreateNative("ZP_GetCostumeAttach",     API_GetCostumeAttach);
+    CreateNative("ZP_GetCostumePosition",   API_GetCostumePosition);
+    CreateNative("ZP_GetCostumeAngle",      API_GetCostumeAngle);
+    CreateNative("ZP_GetCostumeGroup",      API_GetCostumeGroup);
+    CreateNative("ZP_IsCostumeHide",        API_IsCostumeHide);
+    CreateNative("ZP_IsCostumeMerge",       API_IsCostumeMerge);
+    CreateNative("ZP_GetCostumeLevel",      API_GetCostumeLevel);
+}
+ 
+/**
+ * @brief Gets the amount of all costumes.
+ *
+ * @note native int ZP_GetNumberCostumes();
+ **/
+public int API_GetNumberCostumes(Handle hPlugin, int iNumParams)
 {
     // Return the value 
-    return arrayCostumes.Length;
+    return gServerData.Costumes.Length;
 }
 
 /**
- * Gets the costume index of the client.
+ * @brief Gets the costume index of the client.
  *
- * native int ZP_GetClientCostume(clientIndex);
+ * @note native int ZP_GetClientCostume(client);
  **/
-public int API_GetClientCostume(Handle isPlugin, const int iNumParams)
+public int API_GetClientCostume(Handle hPlugin, int iNumParams)
 {
     // Gets real player index from native cell 
-    int clientIndex = GetNativeCell(1);
+    int client = GetNativeCell(1);
 
     // Return the value 
-    return gClientData[clientIndex][Client_Costume];
+    return gClientData[client].Costume;
 }
 
 /**
- * Sets the costume index to the client.
+ * @brief Sets the costume index to the client.
  *
- * native void ZP_SetClientCostume(clientIndex, iD);
+ * @note native void ZP_SetClientCostume(client, iD);
  **/
-public int API_SetClientCostume(Handle isPlugin, const int iNumParams)
+public int API_SetClientCostume(Handle hPlugin, int iNumParams)
 {
     // Gets real player index from native cell 
-    int clientIndex = GetNativeCell(1);
+    int client = GetNativeCell(1);
 
     // Gets class index from native cell
     int iD = GetNativeCell(2);
 
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Zombieclasses, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
     // Call forward
-    Action resultHandle = API_OnClientValidateCostume(clientIndex, iD);
+    Action hResult;
+    gForwardData._OnClientValidateCostume(client, iD, hResult);
 
     // Validate handle
-    if(resultHandle == Plugin_Continue || resultHandle == Plugin_Changed)
+    if (hResult == Plugin_Continue || hResult == Plugin_Changed)
     {
         // Sets costume to the client
-        gClientData[clientIndex][Client_Costume] = iD;
+        gClientData[client].Costume = iD;
     }
 
     // Return on success
@@ -306,19 +437,47 @@ public int API_SetClientCostume(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the name of a costume at a given id.
+ * @brief Gets the index of a costume at a given name.
  *
- * native void ZP_GetCostumeName(iD, name, maxlen);
+ * @note native int ZP_GetCostumeNameID(name);
  **/
-public int API_GetCostumeName(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeNameID(Handle hPlugin, int iNumParams)
+{
+    // Retrieves the string length from a native parameter string
+    int maxLen;
+    GetNativeStringLength(1, maxLen);
+
+    // Validate size
+    if (!maxLen)
+    {
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Can't find costume with an empty name");
+        return -1;
+    }
+    
+    // Gets native data
+    static char sName[SMALL_LINE_LENGTH];
+
+    // General
+    GetNativeString(1, sName, sizeof(sName));
+
+    // Return the value
+    return CostumesNameToIndex(sName);  
+}
+
+/**
+ * @brief Gets the name of a costume at a given id.
+ *
+ * @note native void ZP_GetCostumeName(iD, name, maxlen);
+ **/
+public int API_GetCostumeName(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -326,9 +485,9 @@ public int API_GetCostumeName(Handle isPlugin, const int iNumParams)
     int maxLen = GetNativeCell(3);
 
     // Validate size
-    if(!maxLen)
+    if (!maxLen)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
         return -1;
     }
     
@@ -341,19 +500,19 @@ public int API_GetCostumeName(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the model of a costume at a given id.
+ * @brief Gets the model of a costume at a given id.
  *
- * native void ZP_GetCostumeModel(iD, model, maxlen);
+ * @note native void ZP_GetCostumeModel(iD, model, maxlen);
  **/
-public int API_GetCostumeModel(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeModel(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -361,14 +520,14 @@ public int API_GetCostumeModel(Handle isPlugin, const int iNumParams)
     int maxLen = GetNativeCell(3);
 
     // Validate size
-    if(!maxLen)
+    if (!maxLen)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
         return -1;
     }
     
     // Initialize model char
-    static char sModel[PLATFORM_MAX_PATH];
+    static char sModel[PLATFORM_LINE_LENGTH];
     CostumesGetModel(iD, sModel, sizeof(sModel));
 
     // Return on success
@@ -376,19 +535,19 @@ public int API_GetCostumeModel(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the body index of the costume.
+ * @brief Gets the body index of the costume.
  *
- * native int ZP_GetCostumeBody(iD);
+ * @note native int ZP_GetCostumeBody(iD);
  **/
-public int API_GetCostumeBody(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeBody(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -397,19 +556,19 @@ public int API_GetCostumeBody(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the skin index of the costume.
+ * @brief Gets the skin index of the costume.
  *
- * native int ZP_GetCostumeSkin(iD);
+ * @note native int ZP_GetCostumeSkin(iD);
  **/
-public int API_GetCostumeSkin(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeSkin(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -418,19 +577,19 @@ public int API_GetCostumeSkin(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the attachment of a costume at a given id.
+ * @brief Gets the attachment of a costume at a given id.
  *
- * native void ZP_GetCostumeAttach(iD, attach, maxlen);
+ * @note native void ZP_GetCostumeAttach(iD, attach, maxlen);
  **/
-public int API_GetCostumeAttach(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeAttach(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -438,34 +597,34 @@ public int API_GetCostumeAttach(Handle isPlugin, const int iNumParams)
     int maxLen = GetNativeCell(3);
 
     // Validate size
-    if(!maxLen)
+    if (!maxLen)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
         return -1;
     }
     
-    // Initialize model char
-    static char sModel[PLATFORM_MAX_PATH];
-    CostumesGetAttach(iD, sModel, sizeof(sModel));
+    // Initialize attachment char
+    static char sAttach[SMALL_LINE_LENGTH];
+    CostumesGetAttach(iD, sAttach, sizeof(sAttach));
 
     // Return on success
-    return SetNativeString(2, sModel, maxLen);
+    return SetNativeString(2, sAttach, maxLen);
 }
 
 /**
- * Gets the position of a costume at a given id.
+ * @brief Gets the position of a costume at a given id.
  *
- * native void ZP_GetCostumePosition(iD, position);
+ * @note native void ZP_GetCostumePosition(iD, position);
  **/
-public int API_GetCostumePosition(Handle isPlugin, const int iNumParams)
+public int API_GetCostumePosition(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -478,19 +637,19 @@ public int API_GetCostumePosition(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the angle of a costume at a given id.
+ * @brief Gets the angle of a costume at a given id.
  *
- * native void ZP_GetCostumeAngle(iD, angle);
+ * @note native void ZP_GetCostumeAngle(iD, angle);
  **/
-public int API_GetCostumeAngle(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeAngle(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -503,19 +662,19 @@ public int API_GetCostumeAngle(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the group of a costume at a given id.
+ * @brief Gets the group of a costume at a given id.
  *
- * native void ZP_GetCostumeGroup(iD, group, maxlen);
+ * @note native void ZP_GetCostumeGroup(iD, group, maxlen);
  **/
-public int API_GetCostumeGroup(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeGroup(Handle hPlugin, int iNumParams)
 {
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -523,9 +682,9 @@ public int API_GetCostumeGroup(Handle isPlugin, const int iNumParams)
     int maxLen = GetNativeCell(3);
 
     // Validate size
-    if(!maxLen)
+    if (!maxLen)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "No buffer size");
         return -1;
     }
     
@@ -538,19 +697,19 @@ public int API_GetCostumeGroup(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the hide value of the costume.
+ * @brief Gets the hide value of the costume.
  *
- * native bool ZP_IsCostumeHide(iD);
+ * @note native bool ZP_IsCostumeHide(iD);
  **/
-public int API_IsCostumeHide(Handle isPlugin, const int iNumParams)
+public int API_IsCostumeHide(Handle hPlugin, int iNumParams)
 {    
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -559,19 +718,19 @@ public int API_IsCostumeHide(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the merge value of the costume.
+ * @brief Gets the merge value of the costume.
  *
- * native bool ZP_IsCostumeMerge(iD);
+ * @note native bool ZP_IsCostumeMerge(iD);
  **/
-public int API_IsCostumeMerge(Handle isPlugin, const int iNumParams)
+public int API_IsCostumeMerge(Handle hPlugin, int iNumParams)
 {    
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -580,19 +739,19 @@ public int API_IsCostumeMerge(Handle isPlugin, const int iNumParams)
 }
 
 /**
- * Gets the level of the costume.
+ * @brief Gets the level of the costume.
  *
- * native int ZP_GetCostumeLevel(iD);
+ * @note native int ZP_GetCostumeLevel(iD);
  **/
-public int API_GetCostumeLevel(Handle isPlugin, const int iNumParams)
+public int API_GetCostumeLevel(Handle hPlugin, int iNumParams)
 {    
     // Gets costume index from native cell
     int iD = GetNativeCell(1);
     
     // Validate index
-    if(iD >= arrayCostumes.Length)
+    if (iD >= gServerData.Costumes.Length)
     {
-        LogEvent(false, LogType_Native, LOG_CORE_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
+        LogEvent(false, LogType_Native, LOG_GAME_EVENTS, LogModule_Costumes, "Native Validation", "Invalid the costume index (%d)", iD);
         return -1;
     }
     
@@ -605,169 +764,176 @@ public int API_GetCostumeLevel(Handle isPlugin, const int iNumParams)
  */
 
 /**
- * Gets the name of a costume at a given index.
+ * @brief Gets the name of a costume at a given index.
  *
  * @param iD                The costume index.
  * @param sName             The string to return name in.
- * @param iMaxLen           The max length of the string.
+ * @param iMaxLen           The lenght of string.
  **/
-stock void CostumesGetName(const int iD, char[] sName, const int iMaxLen)
+void CostumesGetName(int iD, char[] sName, int iMaxLen)
 {
+    // Validate no costume
+    if (iD == -1)
+    {
+        strcopy(sName, iMaxLen, "");
+        return;
+    }
+    
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume name
     arrayCostume.GetString(COSTUMES_DATA_NAME, sName, iMaxLen);
 } 
 
 /**
- * Gets the model of a costume at a given index.
+ * @brief Gets the model of a costume at a given index.
  *
  * @param iD                The costume index.
  * @param sModel            The string to return model in.
- * @param iMaxLen           The max length of the string.
+ * @param iMaxLen           The lenght of string.
  **/
-stock void CostumesGetModel(const int iD, char[] sModel, const int iMaxLen)
+void CostumesGetModel(int iD, char[] sModel, int iMaxLen)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume model
     arrayCostume.GetString(COSTUMES_DATA_MODEL, sModel, iMaxLen);
 } 
 
 /**
- * Gets the body index of the costume.
+ * @brief Gets the body index of the costume.
  *
  * @param iD                The costume index.
  * @return                  The body index. 
  **/
-stock bool CostumesGetBody(const int iD)
+bool CostumesGetBody(int iD)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume body index
     return arrayCostume.Get(COSTUMES_DATA_BODY);
 }
 
 /**
- * Gets the skin index of the costume.
+ * @brief Gets the skin index of the costume.
  *
  * @param iD                The costume index.
  * @return                  The skin index. 
  **/
-stock bool CostumesGetSkin(const int iD)
+bool CostumesGetSkin(int iD)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume skin index
     return arrayCostume.Get(COSTUMES_DATA_SKIN);
 }
 
 /**
- * Gets the attachment of a costume at a given index.
+ * @brief Gets the attachment of a costume at a given index.
  *
  * @param iD                The costume index.
  * @param sAttach           The string to return attachment in.
- * @param iMaxLen           The max length of the string.
+ * @param iMaxLen           The lenght of string.
  **/
-stock void CostumesGetAttach(const int iD, char[] sAttach, const int iMaxLen)
+void CostumesGetAttach(int iD, char[] sAttach, int iMaxLen)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume attachment
     arrayCostume.GetString(COSTUMES_DATA_ATTACH, sAttach, iMaxLen);
 }
 
 /**
- * Gets the position of a costume at a given index.
+ * @brief Gets the position of a costume at a given index.
  *
  * @param iD                The costume index.
- * @param vPosition         The vector to return position in.
+ * @param vPosition         The position output.
  **/
-stock void CostumesGetPosition(const int iD, float vPosition[3])
+void CostumesGetPosition(int iD, float vPosition[3])
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume position
     arrayCostume.GetArray(COSTUMES_DATA_POSITION, vPosition, sizeof(vPosition));
 }
 
 /**
- * Gets the anlge of a costume at a given index.
+ * @brief Gets the anlge of a costume at a given index.
  *
  * @param iD                The costume index.
- * @param vAngle            The vector to return angle in.
+ * @param vAngle            The angle output.
  **/
-stock void CostumesGetAngle(const int iD, float vAngle[3])
+void CostumesGetAngle(int iD, float vAngle[3])
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume angle
     arrayCostume.GetArray(COSTUMES_DATA_ANGLE, vAngle, sizeof(vAngle));
 }
 
 /**
- * Gets the access group of a costume at a given index.
+ * @brief Gets the access group of a costume at a given index.
  *
  * @param iD                The costume index.
  * @param sGroup            The string to return group in.
- * @param iMaxLen           The max length of the string.
+ * @param iMaxLen           The lenght of string.
  **/
-stock void CostumesGetGroup(const int iD, char[] sGroup, const int iMaxLen)
+void CostumesGetGroup(int iD, char[] sGroup, int iMaxLen)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume group
     arrayCostume.GetString(COSTUMES_DATA_GROUP, sGroup, iMaxLen);
 } 
 
 /**
- * Retrieve costume hide value.
+ * @brief Retrieve costume hide value.
  * 
  * @param iD                The costume index.
  * @return                  True if costume is hided, false if not.
  **/
-stock bool CostumesIsHide(const int iD)
+bool CostumesIsHide(int iD)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Return true if costume is hide, false if not
     return arrayCostume.Get(COSTUMES_DATA_HIDE);
 }
 
 /**
- * Retrieve costume merge value.
+ * @brief Retrieve costume merge value.
  * 
  * @param iD                The costume index.
  * @return                  True if costume is merged, false if not.
  **/
-stock bool CostumesIsMerge(const int iD)
+bool CostumesIsMerge(int iD)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Return true if costume is merged, false if not
     return arrayCostume.Get(COSTUMES_DATA_MERGE);
 }
 
 /**
- * Gets the level of the costume.
+ * @brief Gets the level of the costume.
  * 
  * @param iD                The costume index.
  * @return                  The level amount.    
  **/
-stock int CostumesGetLevel(const int iD)
+int CostumesGetLevel(int iD)
 {
     // Gets array handle of costume at given index
-    ArrayList arrayCostume = arrayCostumes.Get(iD);
+    ArrayList arrayCostume = gServerData.Costumes.Get(iD);
     
     // Gets costume level 
     return arrayCostume.Get(COSTUMES_DATA_LEVEL);
@@ -778,14 +944,50 @@ stock int CostumesGetLevel(const int iD)
  */
  
 /**
- * Create a costume menu.
- *
- * @param clientIndex       The client index.
+ * @brief Find the index at which the costume name is at.
+ * 
+ * @param sName             The costume name.
+ * @return                  The array index containing the given costume name.
  **/
-void CostumesMenu(const int clientIndex)
+int CostumesNameToIndex(char[] sName)
 {
+    // Initialize name char
+    static char sCostumeName[SMALL_LINE_LENGTH];
+    
+    // i = costume index
+    int iSize = gServerData.Costumes.Length;
+    for (int i = 0; i < iSize; i++)
+    {
+        // Gets costume name 
+        CostumesGetName(i, sCostumeName, sizeof(sCostumeName));
+        
+        // If names match, then return index
+        if (!strcmp(sName, sCostumeName, false))
+        {
+            // Return this index
+            return i;
+        }
+    }
+    
+    // Name doesn't exist
+    return -1;
+}
+ 
+/**
+ * @brief Creates a costume menu.
+ *
+ * @param client            The client index.
+ **/
+void CostumesMenu(int client)
+{
+    // If module is disabled, then stop
+    if (!gCvarList.COSTUMES.BoolValue)
+    {
+        return;
+    }
+    
     // Validate client
-    if(!IsPlayerExist(clientIndex, false))
+    if (!IsPlayerExist(client, false))
     {
         return;
     }
@@ -797,27 +999,33 @@ void CostumesMenu(const int clientIndex)
     static char sLevel[SMALL_LINE_LENGTH];
     static char sGroup[SMALL_LINE_LENGTH];
     
-    // Create menu handle
-    Menu hMenu = CreateMenu(CostumesMenuSlots);
+    // Creates menu handle
+    Menu hMenu = new Menu(CostumesMenuSlots);
     
-    // Sets the language to target
-    SetGlobalTransTarget(clientIndex);
+    // Sets language to target
+    SetGlobalTransTarget(client);
     
     // Sets title
     hMenu.SetTitle("%t", "costumes menu");
     
+    // Format some chars for showing in menu
+    FormatEx(sBuffer, sizeof(sBuffer), "%t\n \n", "remove");
+    
+    // Show add option
+    hMenu.AddItem("-1", sBuffer);
+    
     // Initialize forward
-    static Action resultHandle;
+    Action hResult;
     
     // i = array index
-    int iSize = arrayCostumes.Length;
-    for(int i = 0; i < iSize; i++)
+    int iSize = gServerData.Costumes.Length; int iAmount;
+    for (int i = 0; i < iSize; i++)
     {
         // Call forward
-        resultHandle = API_OnClientValidateCostume(clientIndex, i);
+        gForwardData._OnClientValidateCostume(client, i, hResult);
         
         // Skip, if class is disabled
-        if(resultHandle == Plugin_Stop)
+        if (hResult == Plugin_Stop)
         {
             continue;
         }
@@ -827,21 +1035,23 @@ void CostumesMenu(const int clientIndex)
         CostumesGetGroup(i, sGroup, sizeof(sGroup));
         
         // Format some chars for showing in menu
-        Format(sLevel, sizeof(sLevel), "%t", "level", CostumesGetLevel(i));
-        Format(sBuffer, sizeof(sBuffer), "%t\t%s", sName, (!IsPlayerInGroup(clientIndex, sGroup) && strlen(sGroup)) ? sGroup : (gClientData[clientIndex][Client_Level] < CostumesGetLevel(i)) ? sLevel : "");
+        FormatEx(sLevel, sizeof(sLevel), "%t", "level", CostumesGetLevel(i));
+        FormatEx(sBuffer, sizeof(sBuffer), "%t  %s", sName, (hasLength(sGroup) && !IsPlayerInGroup(client, sGroup)) ? sGroup : (gClientData[client].Level < CostumesGetLevel(i)) ? sLevel : "");
 
         // Show option
         IntToString(i, sInfo, sizeof(sInfo));
-        hMenu.AddItem(sInfo, sBuffer, MenuGetItemDraw(resultHandle == Plugin_Handled || (!IsPlayerInGroup(clientIndex, sGroup) && strlen(sGroup)) || gClientData[clientIndex][Client_Level] < CostumesGetLevel(i) || gClientData[clientIndex][Client_Costume] == i) ? false : true);
+        hMenu.AddItem(sInfo, sBuffer, MenusGetItemDraw((hResult == Plugin_Handled || (hasLength(sGroup) && !IsPlayerInGroup(client, sGroup)) || gClientData[client].Level < CostumesGetLevel(i) || gClientData[client].Costume == i) ? false : true));
+    
+        // Increment amount
+        iAmount++;
     }
     
     // If there are no cases, add an "(Empty)" line
-    if(!iSize)
+    if (!iAmount)
     {
-        static char sEmpty[SMALL_LINE_LENGTH];
-        Format(sEmpty, sizeof(sEmpty), "%t", "empty");
-
-        hMenu.AddItem("empty", sEmpty, ITEMDRAW_DISABLED);
+        // Format some chars for showing in menu
+        FormatEx(sBuffer, sizeof(sBuffer), "%t", "empty");
+        hMenu.AddItem("empty", sBuffer, ITEMDRAW_DISABLED);
     }
 
     // Sets exit and back button
@@ -849,21 +1059,21 @@ void CostumesMenu(const int clientIndex)
 
     // Sets options and display it
     hMenu.OptionFlags = MENUFLAG_BUTTON_EXIT | MENUFLAG_BUTTON_EXITBACK;
-    hMenu.Display(clientIndex, MENU_TIME_FOREVER); 
+    hMenu.Display(client, MENU_TIME_FOREVER); 
 }
 
 /**
- * Called when client selects option in the main menu, and handles it.
+ * @brief Called when client selects option in the main menu, and handles it.
  *  
  * @param hMenu             The handle of the menu being used.
  * @param mAction           The action done on the menu (see menus.inc, enum MenuAction).
- * @param clientIndex       The client index.
+ * @param client            The client index.
  * @param mSlot             The slot index selected (starting from 0).
  **/ 
-public int CostumesMenuSlots(Menu hMenu, MenuAction mAction, const int clientIndex, const int mSlot)
+public int CostumesMenuSlots(Menu hMenu, MenuAction mAction, int client, int mSlot)
 {
     // Switch the menu action
-    switch(mAction)
+    switch (mAction)
     {
         // Client hit 'Exit' button
         case MenuAction_End :
@@ -874,10 +1084,11 @@ public int CostumesMenuSlots(Menu hMenu, MenuAction mAction, const int clientInd
         // Client hit 'Back' button
         case MenuAction_Cancel :
         {
-            if(mSlot == MenuCancel_ExitBack)
+            if (mSlot == MenuCancel_ExitBack)
             {
-                // Open main menu back
-                MenuMain(clientIndex);
+                // Opens menu back
+                int iD[2]; iD = MenusCommandToArray("zcostume");
+                if (iD[0] != -1) SubMenu(client, iD[0]);
             }
         }
         
@@ -885,239 +1096,209 @@ public int CostumesMenuSlots(Menu hMenu, MenuAction mAction, const int clientInd
         case MenuAction_Select :
         {
             // Validate client
-            if(!IsPlayerExist(clientIndex, false))
+            if (!IsPlayerExist(client, false))
             {
                 return;
             }
             
-            // Initialize variable
-            static char sInfo[SMALL_LINE_LENGTH];
-
-            // Gets ID of costume
-            hMenu.GetItem(mSlot, sInfo, sizeof(sInfo));
-            int iD = StringToInt(sInfo);
+            // Gets menu info
+            static char sBuffer[SMALL_LINE_LENGTH];
+            hMenu.GetItem(mSlot, sBuffer, sizeof(sBuffer));
+            int iD = StringToInt(sBuffer);
             
-            // Call forward
-            Action resultHandle = API_OnClientValidateCostume(clientIndex, iD);
-            
-            // Validate handle
-            if(resultHandle == Plugin_Continue || resultHandle == Plugin_Changed)
+            // Validate button info
+            switch (iD)
             {
-                // Sets costume to the client
-                gClientData[clientIndex][Client_Costume] = iD;
-                
-                // Sets costume
-                CostumesCreateEntity(clientIndex);
+                // Client hit 'Remove' button
+                case -1 :
+                {
+                    // Remove current costume
+                    CostumesRemove(client);
+                    
+                    // Sets costume to the client
+                    gClientData[client].Costume = -1;
+                }
+            
+                // Client hit 'Costume' button
+                default :
+                {
+                    // Call forward
+                    Action hResult;
+                    gForwardData._OnClientValidateCostume(client, iD, hResult);
+                    
+                    // Validate handle
+                    if (hResult == Plugin_Continue || hResult == Plugin_Changed)
+                    {
+                        // Sets costume to the client
+                        gClientData[client].Costume = iD;
+                        
+                        // Update costume in the database
+                        DataBaseOnClientUpdate(client, ColumnType_Costume);
+                        
+                        // Sets costume
+                        CostumesCreateEntity(client);
+                    }
+                }
             }
         }
     }
 }
 
-#if defined USE_DHOOKS
 /**
- * DHook: Sets the model to a given entity.
- * void CCSPlayer::SetModel(char const*)
+ * DHook: Sets the model to a given player.
+ * @note void CBasePlayer::SetModel(char const*)
  *
- * @param clientIndex       The client index.
+ * @param client            The client index.
  **/
-public MRESReturn CostumesDhookOnSetEntityModel(const int clientIndex)
+public MRESReturn CostumesDhookOnSetEntityModel(int client)
 {
     // Update costume
-    CostumesCreateEntity(clientIndex);
+    CostumesCreateEntity(client);
 }
-#endif
 
 /**
- * Create an attachment costume entity for the client.
+ * @brief Creates an attachment costume entity for the client.
  *
- * @param clientIndex       The client index.
+ * @param client            The client index.
  **/
-public void CostumesCreateEntity(const int clientIndex)
+void CostumesCreateEntity(int client)
 {
     // Validate client
-    if(IsPlayerExist(clientIndex))
+    if (IsPlayerExist(client))
     {
-        // Gets the current costume from the client reference
-        int entityIndex = EntRefToEntIndex(gClientData[clientIndex][Client_AttachmentCostume]);
-
-        // Validate costume
-        if(entityIndex != INVALID_ENT_REFERENCE) 
-        {
-            AcceptEntityInput(entityIndex, "Kill"); //! Destroy
-        }
+        // Remove current costume
+        CostumesRemove(client);
 
         // Validate zombie
-        if(gClientData[clientIndex][Client_Zombie])
+        if (gClientData[client].Zombie)
         {
             return;
         }
         
         // Gets array size
-        int iSize = arrayCostumes.Length;
+        int iSize = gServerData.Costumes.Length;
 
         // Validate costume
-        if(gClientData[clientIndex][Client_Costume] == -1 || iSize <= gClientData[clientIndex][Client_Costume])
+        if (gClientData[client].Costume == -1 || iSize <= gClientData[client].Costume)
         {
-            gClientData[clientIndex][Client_Costume] = -1;
+            gClientData[client].Costume = -1;
             return;
         }
         
         // Gets costume group
         static char sGroup[SMALL_LINE_LENGTH];
-        CostumesGetGroup(gClientData[clientIndex][Client_Costume], sGroup, sizeof(sGroup));
+        CostumesGetGroup(gClientData[client].Costume, sGroup, sizeof(sGroup));
         
         // Validate access
-        if(!IsPlayerInGroup(clientIndex, sGroup) && strlen(sGroup))
+        if (hasLength(sGroup) && !IsPlayerInGroup(client, sGroup))
         {
-            gClientData[clientIndex][Client_Costume] = -1;
+            gClientData[client].Costume = -1;
             return;
         }
 
-        // Create an attach addon entity 
-        entityIndex = CreateEntityByName("prop_dynamic_override");
+        // Gets costume model
+        static char sModel[PLATFORM_LINE_LENGTH];
+        CostumesGetModel(gClientData[client].Costume, sModel, sizeof(sModel));
+        
+        // Creates an attach addon entity 
+        int entity = UTIL_CreateDynamic("costume", NULL_VECTOR, NULL_VECTOR, sModel);
         
         // If entity isn't valid, then skip
-        if(entityIndex != INVALID_ENT_REFERENCE)
+        if (entity != -1)
         {
-            // Gets costume model
-            static char sModel[PLATFORM_MAX_PATH];
-            CostumesGetModel(gClientData[clientIndex][Client_Costume], sModel, sizeof(sModel)); 
+            // Sets bodygroup/skin for the entity
+            ToolsSetTextures(entity, CostumesGetBody(gClientData[client].Costume), CostumesGetSkin(gClientData[client].Costume)); 
 
-            // Dispatch main values of the entity
-            DispatchKeyValue(entityIndex, "model", sModel);
-            DispatchKeyValue(entityIndex, "spawnflags", "256"); /// Start with collision disabled
-            DispatchKeyValue(entityIndex, "solid", "0");
-           
-            // Sets bodygroup of the entity
-            SetVariantInt(CostumesGetBody(gClientData[clientIndex][Client_Costume]));
-            AcceptEntityInput(entityIndex, "SetBodyGroup");
-            
-            // Sets skin of the entity
-            SetVariantInt(CostumesGetSkin(gClientData[clientIndex][Client_Costume]));
-            AcceptEntityInput(entityIndex, "ModelSkin");
-            
-            // Spawn the entity into the world
-            DispatchSpawn(entityIndex);
-            
             // Sets parent to the entity
-            SetEntDataEnt2(entityIndex, g_iOffset_EntityOwnerEntity, clientIndex, true);
-            
-            // Sets parent to the client
             SetVariantString("!activator");
-            AcceptEntityInput(entityIndex, "SetParent", clientIndex, entityIndex);
+            AcceptEntityInput(entity, "SetParent", client, entity);
+            ToolsSetOwner(entity, client);
 
             // Gets costume attachment
             static char sAttach[SMALL_LINE_LENGTH];
-            CostumesGetAttach(gClientData[clientIndex][Client_Costume], sAttach, sizeof(sAttach)); 
+            CostumesGetAttach(gClientData[client].Costume, sAttach, sizeof(sAttach)); 
 
             // Validate attachment
-            if(ToolsLookupAttachment(clientIndex, sAttach))
+            if (ToolsLookupAttachment(client, sAttach))
             {
-                // Sets attachment to the client
+                // Sets attachment to the entity
                 SetVariantString(sAttach);
-                AcceptEntityInput(entityIndex, "SetParentAttachment", clientIndex, entityIndex);
+                AcceptEntityInput(entity, "SetParentAttachment", client, entity);
             }
             else
             {
                 // Initialize vector variables
-                static float vOrigin[3]; static float vAngle[3]; static float vEntOrigin[3]; static float vEntAngle[3]; static float vForward[3]; static float vRight[3];  static float vVertical[3]; 
+                static float vPosition[3]; static float vAngle[3]; static float vEntOrigin[3]; static float vEntAngle[3]; static float vForward[3]; static float vRight[3];  static float vVertical[3]; 
 
                 // Gets client position
-                GetClientAbsOrigin(clientIndex, vOrigin); 
-                GetClientAbsAngles(clientIndex, vAngle);
+                ToolsGetAbsOrigin(client, vPosition); 
+                ToolsGetAbsAngles(client, vAngle);
                 
                 // Gets costume position
-                CostumesGetPosition(gClientData[clientIndex][Client_Costume], vEntOrigin);
-                CostumesGetAngle(gClientData[clientIndex][Client_Costume], vEntAngle);
+                CostumesGetPosition(gClientData[client].Costume, vEntOrigin);
+                CostumesGetAngle(gClientData[client].Costume, vEntAngle);
                 
-                // Gets location angles
-                vAngle[0] += vEntAngle[0];
-                vAngle[1] += vEntAngle[1];
-                vAngle[2] += vEntAngle[2];
+                // Add location angles
+                AddVectors(vAngle, vEntAngle, vAngle);
                 
                 // Returns vectors in the direction of an angle
                 GetAngleVectors(vAngle, vForward, vRight, vVertical);
                 
                 // Calculate ends point by applying all vectors distances 
-                vOrigin[0] += (vForward[0] * vEntOrigin[0]) + (vRight[0] * vEntOrigin[1]) + (vVertical[0] * vEntOrigin[2]);
-                vOrigin[1] += (vForward[1] * vEntOrigin[0]) + (vRight[1] * vEntOrigin[1]) + (vVertical[1] * vEntOrigin[2]);
-                vOrigin[2] += (vForward[2] * vEntOrigin[0]) + (vRight[2] * vEntOrigin[1]) + (vVertical[2] * vEntOrigin[2]);
+                vPosition[0] += (vForward[0] * vEntOrigin[0]) + (vRight[0] * vEntOrigin[1]) + (vVertical[0] * vEntOrigin[2]);
+                vPosition[1] += (vForward[1] * vEntOrigin[0]) + (vRight[1] * vEntOrigin[1]) + (vVertical[1] * vEntOrigin[2]);
+                vPosition[2] += (vForward[2] * vEntOrigin[0]) + (vRight[2] * vEntOrigin[1]) + (vVertical[2] * vEntOrigin[2]);
 
-                // Spawn the entity
-                TeleportEntity(entityIndex, vOrigin, vAngle, NULL_VECTOR);
+                // Teleport the entity
+                ///DispatchKeyValueVector(entity, "origin", vPosition);
+                ///DispatchKeyValueVector(entity, "angles", vAngle);
+                TeleportEntity(entity, vPosition, vAngle, NULL_VECTOR);
             }
         
             // Validate merging
-            if(CostumesIsMerge(gClientData[clientIndex][Client_Costume])) CostumesBoneMerge(entityIndex);
+            if (CostumesIsMerge(gClientData[client].Costume)) CostumesBoneMerge(entity);
 
             // Hook entity callbacks
-            if(CostumesIsHide(gClientData[clientIndex][Client_Costume])) SDKHook(entityIndex, SDKHook_SetTransmit, CostumesOnTransmit);
+            if (CostumesIsHide(gClientData[client].Costume)) SDKHook(entity, SDKHook_SetTransmit, ToolsOnEntityTransmit);
             
             // Store the client cache
-            gClientData[clientIndex][Client_AttachmentCostume] = EntIndexToEntRef(entityIndex);
+            gClientData[client].AttachmentCostume = EntIndexToEntRef(entity);
         }
     }
 }
 
 /**
- * Hook: SetTransmit
- * Called right before the entity transmitting to other entities.
+ * @brief Performs a bone merge on the client side.
  *
- * @param entityIndex       The entity index.
- * @param clientIndex       The client index.
+ * @param entity            The entity index.
  **/
-public Action CostumesOnTransmit(const int entityIndex, const int clientIndex)
+void CostumesBoneMerge(int entity)
 {
-    // Validate addons
-    if(EntRefToEntIndex(gClientData[clientIndex][Client_AttachmentCostume]) == entityIndex)
-    {
-        // Validate observer mode
-        if(GetEntData(clientIndex, g_iOffset_PlayerObserverMode))
-        {
-            // Allow transmitting    
-            return Plugin_Continue;
-        }
+    // Gets current effects
+    int iEffects = ToolsGetEffect(entity); 
 
-        // Block transmitting
-        return Plugin_Handled;
-    }
-    
-    // Get the owner of the entity
-    int ownerIndex = GetEntDataEnt2(entityIndex, g_iOffset_EntityOwnerEntity);
-
-    // Validate dead owner
-    if(!IsPlayerAlive(ownerIndex))
-    {
-        // Block transmitting
-        return Plugin_Handled;
-    }
-    
-    // Validate observer mode
-    if(GetEntData(clientIndex, g_iOffset_PlayerObserverMode) == TEAM_OBSERVER && ownerIndex == GetEntDataEnt2(clientIndex, g_iOffset_PlayerObserverTarget))
-    {
-        // Block transmitting
-        return Plugin_Handled;
-    }
-
-    // Allow transmitting
-    return Plugin_Continue;
-}
-
-/**
- * Performs bone merge on the client side.
- *
- * @param entityIndex       The entity index.
- **/
-void CostumesBoneMerge(const int entityIndex)
-{
-    // Gets the current effects
-    int iEffects = GetEntData(entityIndex, g_iOffset_EntityEffects); 
-
-    // Set merging
+    // Sets merging
     iEffects &= ~EF_NODRAW;
     iEffects |= EF_BONEMERGE;
     iEffects |= EF_BONEMERGE_FASTCULL;
 
     // Sets value on the entity
-    SetEntData(entityIndex, g_iOffset_EntityEffects, iEffects); 
+    ToolsSetEffect(entity, iEffects); 
+}
+
+/**
+ * @brief Remove a costume entities from the client.
+ *
+ * @param client            The client index.
+ **/
+void CostumesRemove(int client)
+{
+    // Gets current costume from the client reference
+    int entity = EntRefToEntIndex(gClientData[client].AttachmentCostume);
+
+    // Validate costume
+    if (entity != -1) 
+    {
+        AcceptEntityInput(entity, "Kill"); /// Destroy
+    }
 }

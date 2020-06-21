@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          global.cpp
- *  Type:          Main 
+ *  Type:          Main
  *  Description:   General plugin functions.
  *
- *  Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)
+ *  Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,172 +20,308 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
 
 /**
- * @section: Core static macroses.
+ * @section List of operation systems.
  **/
-#define SMALL_LINE_LENGTH   32
-#define NORMAL_LINE_LENGTH  64
-#define BIG_LINE_LENGTH     128
-#define MAXENTITIES         2048
-#define TEAM_NONE           0    /**< No team yet */
-#define TEAM_SPECTATOR      1    /**< Spectators */
-#define TEAM_ZOMBIE         2    /**< Zombies */
-#define TEAM_HUMAN          3    /**< Humans */
-#define TEAM_OBSERVER       4    /**< Observers */
-/**
- * @endsection
- **/
-
-/**
- * @section Variables to store offset values.
- **/
-int g_iOffset_PlayerVelocity;
-int g_iOffset_PlayerLMV;
-int g_iOffset_PlayerNightVisionOn;
-int g_iOffset_PlayerHasNightVision;
-int g_iOffset_PlayerHasDefuser;
-int g_iOffset_PlayerDefaultFOV;
-int g_iOffset_PlayerAccount;
-int g_iOffset_PlayerSpotted;
-int g_iOffset_PlayerDetected;
-int g_iOffset_PlayerHUD;
-int g_iOffset_PlayerHitGroup;
-int g_iOffset_EntityEffects;
-int g_iOffset_PlayerArmor;
-int g_iOffset_PlayerHealth;
-int g_iOffset_PlayerMaxHealth;
-int g_iOffset_PlayerGravity;
-int g_iOffset_PlayerFrags;
-int g_iOffset_PlayerDeath;
-int g_iOffset_PlayerCollision;
-int g_iOffset_PlayerRagdool;
-int g_iOffset_EntityModelIndex;
-int g_iOffset_EntityOwnerEntity;
-int g_iOffset_EntityTeam;
-int g_iOffset_WeaponID;
-int g_iOffset_WeaponOwner;
-int g_iOffset_WeaponWorldModel;
-int g_iOffset_WeaponWorldSkin;
-int g_iOffset_WeaponBody;
-int g_iOffset_WeaponSkin;
-int g_iOffset_CharacterWeapons;
-int g_iOffset_PlayerViewModel;
-int g_iOffset_PlayerActiveWeapon;
-int g_iOffset_PlayerLastWeapon;
-int g_iOffset_PlayerObserverMode;
-int g_iOffset_PlayerObserverTarget;
-int g_iOffset_PlayerAttack;
-int g_iOffset_PlayerArms;
-int g_iOffset_PlayerAddonBits;
-int g_iOffset_ViewModelOwner;
-int g_iOffset_ViewModelWeapon;
-int g_iOffset_ViewModelSequence;
-int g_iOffset_ViewModelPlaybackRate;
-int g_iOffset_ViewModelIndex;
-int g_iOffset_ViewModelIgnoreOffsAcc;
-int g_iOffset_EconItemDefinitionIndex;
-int g_iOffset_NewSequenceParity;
-int g_iOffset_LastShotTime;
-int g_iOffset_WeaponAmmoType;
-int g_iOffset_WeaponClip1;
-int g_iOffset_WeaponReserve1;
-int g_iOffset_WeaponReserve2;
-int g_iOffset_WeaponPrimaryAttack;
-int g_iOffset_WeaponSecondaryAttack;
-int g_iOffset_WeaponIdle;
-int g_iOffset_GrenadeThrower;
-/**
- * @endsection
- **/
-
-/**
- * List of operation types for gamedata config.
- **/
-enum GameData
+enum EngineOS
 {
-    Handle:Game_Zombie,
-    Handle:Game_SDKHooks,
-    Handle:Game_SDKTools,
-    Handle:Game_CStrike
+    OS_Unknown,
+    OS_Windows,
+    OS_Linux
 };
+/**
+ * @endsection
+ **/
  
 /**
- * List of operation types for global array.
+ * @section Struct of operation types for server arrays.
  **/
-enum ServerData
+enum struct ServerData
 {
-    bool:Server_RoundNew,
-    bool:Server_RoundEnd,
-    bool:Server_RoundStart,
-    Server_RoundNumber,
-    Server_RoundMode,
-    Server_RoundCount,
-    EngineOS:Server_PlatForm,
-    Handle:Server_GameConfig[GameData],
-    String:Server_MapName[PLATFORM_MAX_PATH]
-};
+    /* Globals */
+    bool RoundNew;
+    bool RoundEnd;
+    bool RoundStart;
+    int RoundNumber;
+    int RoundMode;
+    int RoundLast;
+    int RoundCount;
+    ArrayList Clients;
+    ArrayList LastZombies;
+    
+    /* Map */
+    bool MapLoaded;
+    ArrayList Spawns;
+    ArrayList Particles;
+    StringMap Entities;
+    
+    /* OS */
+    Address Engine;
+    EngineOS Platform;
+    
+    /* Timer */
+    Handle CounterTimer;
+    
+    /* Sounds */
+    Handle EndTimer; 
+    Handle BlastTimer;
+    
+    /* Gamedata */
+    GameData Config;
+    GameData SDKHooks;
+    GameData SDKTools;
+    GameData CStrike;
 
-/**
- * Arrays to store the server data.
- **/
-int gServerData[ServerData];
-
-/**
- * List of operation types for clients arrays.
- **/
-enum ClientData
-{
-    /* Global */
-    bool:Client_Zombie,
-    bool:Client_Survivor,
-    bool:Client_Nemesis,
-    bool:Client_Skill,
-    bool:Client_Loaded,
-    bool:Client_AutoRebuy,
-    Float:Client_SkillCountDown,
-    Client_ZombieClass,
-    Client_ZombieClassNext,
-    Client_HumanClass,
-    Client_HumanClassNext,
-    Client_Respawn,
-    Client_RespawnTimes,
-    Client_AmmoPacks,
-    Client_LastBoughtAmount,
-    Client_Level,
-    Client_Exp,
-    Client_DataID,
-    Client_Costume,
-    Client_Time,
-    Client_AttachmentCostume,
-    Client_AttachmentBits,
-    Client_AttachmentAddons[11], /* Amount of weapon back attachments */
+    /* Database */
+    Database DBI;
+    StringMap Cols;
+    StringMapSnapshot Columns;
+    
+    /* Synchronizers */
+    Handle LevelSync;
+    Handle AccountSync;
+    Handle GameSync;
+    
+    /* Configs */
+    ArrayList ExtraItems;
+    ArrayList HitGroups;
+    ArrayList GameModes;
+    ArrayList Cvars;
+    ArrayList Classes;
+    ArrayList Types;
+    ArrayList Costumes;
+    ArrayList Menus;
+    ArrayList Logs;
+    ArrayList Weapons;
+    ArrayList Downloads;
+    ArrayList Sounds;
+    ArrayList Levels;
+    StringMap Configs;
+    StringMap Modules;
     
     /* Weapons */
-    Client_ViewModels[2],
-    Client_LastSequence,
-    Client_CustomWeapon,
-    Client_DrawSequence,
-    Client_WeaponIndex,
-    bool:Client_ToggleSequence,
-    Client_LastSequenceParity,
-    Client_SwapWeapon,
-   
-    /* Timers */
-    Handle:Client_LevelTimer,
-    Handle:Client_AccountTimer,
-    Handle:Client_RespawnTimer,
-    Handle:Client_SkillTimer,
-    Handle:Client_CountDownTimer,
-    Handle:Client_HealTimer,
-    Handle:Client_MoanTimer
-};
+    int Melee;
+    StringMap Market;
+
+    /**
+     * @brief Clear all timers.
+     **/
+    void PurgeTimers(/*void*/)
+    {
+        this.CounterTimer = null;
+        this.EndTimer     = null;
+        this.BlastTimer   = null;
+    }
+}
+/**
+ * @endsection
+ **/
 
 /**
- * Arrays to store the clients' data.
+ * Array to store the server data.
  **/
-int gClientData[MAXPLAYERS+1][ClientData];
+ServerData gServerData;
+
+/**
+ * @section Struct of operation types for client arrays.
+ **/
+enum struct ClientData
+{
+    /* Globals */
+    int AccountID;
+    bool Zombie;
+    bool Loaded;
+    bool Skill;
+    float SkillCounter;
+    int Class;
+    int HumanClassNext;
+    int ZombieClassNext;
+    int Respawn;
+    int RespawnTimes;
+    int Money;
+    int LastPurchase;
+    int Level;
+    int Exp;
+    int Costume;
+    int Time;
+    bool Vision;
+    int DataID;
+    int LastID;
+    int LastAttacker;
+    int TeleTimes;
+    int TeleCounter;
+    float TeleOrigin[3];
+    float HealthDuration;
+    int AttachmentCostume;
+    int AttachmentHealth;
+    int AttachmentController;
+    int AttachmentBits;
+    int AttachmentAddons[12]; /* Amount of weapon back attachments */
+    
+    /* Weapons */
+    int ViewModels[2];
+    int IndexWeapon;
+    int CustomWeapon;
+    int LastWeapon;
+    int LastGrenade;
+    int LastKnife;
+    int SwapWeapon;
+    int LastSequence;
+    int LastSequenceParity;
+    bool ToggleSequence;
+    bool RunCmd;
+    
+    /* Timers */
+    Handle LevelTimer;
+    Handle AccountTimer;
+    Handle RespawnTimer;
+    Handle SkillTimer;
+    Handle CounterTimer;
+    Handle HealTimer;
+    Handle SpriteTimer;
+    Handle MoanTimer;
+    Handle AmbientTimer;
+    Handle BuyTimer;
+    Handle TeleTimer;
+    
+    /* Arrays */
+    ArrayList ShoppingCart;
+    ArrayList DefaultCart;
+    StringMap ItemLimit;
+    StringMap WeaponLimit;
+    
+    /**
+     * @brief Resets all variables.
+     **/
+    void ResetVars(/*void*/)
+    {
+        this.AccountID            = 0;                
+        this.Zombie               = false;
+        this.Loaded               = false;
+        this.Skill                = false;
+        this.SkillCounter         = 0.0;
+        this.Class                = 0;
+        this.HumanClassNext       = 0;
+        this.ZombieClassNext      = 0;
+        this.Respawn              = TEAM_HUMAN;
+        this.RespawnTimes         = 0;
+        this.Money                = 0;
+        this.LastPurchase         = 0;
+        this.Level                = 1;
+        this.Exp                  = 0;
+        this.Costume              = -1;
+        this.Time                 = 0;
+        this.Vision               = true;
+        this.DataID               = -1;
+        this.LastID               = -1;
+        this.LastAttacker         = 0;
+        this.TeleTimes            = 0;
+        this.TeleCounter          = 0;
+        this.TeleOrigin           = NULL_VECTOR;
+        this.HealthDuration       = 0.0;
+        this.AttachmentCostume    = -1;
+        this.AttachmentHealth     = -1;
+        this.AttachmentController = -1;
+        this.AttachmentBits       = 0;
+        this.AttachmentAddons[0]  = -1;
+        this.AttachmentAddons[1]  = -1; 
+        this.AttachmentAddons[2]  = -1; 
+        this.AttachmentAddons[3]  = -1; 
+        this.AttachmentAddons[4]  = -1;
+        this.AttachmentAddons[5]  = -1; 
+        this.AttachmentAddons[6]  = -1; 
+        this.AttachmentAddons[7]  = -1; 
+        this.AttachmentAddons[8]  = -1; 
+        this.AttachmentAddons[9]  = -1;
+        this.AttachmentAddons[10] = -1;
+        this.AttachmentAddons[11] = -1;
+        this.ViewModels[0]        = -1;
+        this.ViewModels[1]        = -1;
+        this.IndexWeapon          = -1;
+        this.CustomWeapon         = -1;
+        this.LastWeapon           = -1;
+        this.LastGrenade          = -1;
+        this.LastKnife            = -1;
+        this.SwapWeapon           = -1;
+        this.LastSequence         = -1;
+        this.LastSequenceParity   = -1;
+        this.ToggleSequence       = false;
+        this.RunCmd               = false;
+       
+        delete this.ShoppingCart;
+        delete this.DefaultCart;
+        delete this.ItemLimit;
+        delete this.WeaponLimit;
+    }
+    
+    /**
+     * @brief Delete all timers.
+     **/
+    void ResetTimers(/*void*/)
+    {
+        delete this.LevelTimer;
+        delete this.AccountTimer;
+        delete this.RespawnTimer;
+        delete this.SkillTimer;
+        delete this.CounterTimer;
+        delete this.HealTimer;
+        delete this.SpriteTimer;
+        delete this.MoanTimer;
+        delete this.AmbientTimer;
+        delete this.BuyTimer;
+        delete this.TeleTimer;
+    }
+    
+    /**
+     * @brief Clear all timers.
+     **/
+    void PurgeTimers(/*void*/)
+    {
+        this.LevelTimer   = null;
+        this.AccountTimer = null;
+        this.RespawnTimer = null;
+        this.SkillTimer   = null;
+        this.CounterTimer = null;
+        this.HealTimer    = null;
+        this.SpriteTimer  = null;
+        this.MoanTimer    = null; 
+        this.AmbientTimer = null; 
+        this.BuyTimer     = null;
+        this.TeleTimer     = null;
+    }
+}
+/**
+ * @endsection
+ **/
+ 
+/**
+ * Array to store the client data.
+ **/
+ClientData gClientData[MAXPLAYERS+1];
+
+/**
+ * @section Core useful functions.
+ **/
+#define _call.%0(%1)  RequestFrame(%0, GetClientUserId(%1))
+#define _exec.%0(%1)  RequestFrame(%0, EntIndexToEntRef(%1))
+/**
+ * @endsection
+ **/
+ 
+/**
+ * @brief Called when an entity is created.
+ *
+ * @param entity            The entity index.
+ * @param sClassname        The string with returned name.
+ **/
+public void OnEntityCreated(int entity, const char[] sClassname)
+{
+    // Forward event to modules
+    WeaponOnEntityCreated(entity, sClassname);
+    HitGroupsOnEntityCreated(entity, sClassname);
+}

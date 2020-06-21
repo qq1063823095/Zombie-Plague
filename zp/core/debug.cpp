@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          debug.cpp
  *  Type:          Core
- *  Description:   Description: Place to put custom functions and test stuff.
+ *  Description:   Place to put custom functions and test stuff.
  *
- *  Copyright (C) 2015-2018  Greyscale, Richard Helgeby
+ *  Copyright (C) 2015-2020  Greyscale, Richard Helgeby
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,33 +20,32 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
 
 /**
- * Creates commands for debug module. Called when commands are created.
+ * @brief Creates commands for debug module.
  **/
-void DebugOnCommandsCreate(/*void*/)
+void DebugOnCommandInit(/*void*/)
 {
     // Hook commands
-    RegAdminCmd("zp_debug", DebugCommandCatched, ADMFLAG_GENERIC, "Prints debugging dump info the log file.");
+    RegAdminCmd("zp_debug", DebugOnCommandCatched, ADMFLAG_GENERIC, "Prints debugging dump info the log file.");
 }
 
 /**
- * Handles the <!zp_debug> command. Create the debug log.
+ * Console command callback (zp_debug)
+ * @brief Creates the debug log.
  * 
- * @param clientIndex       The client index.
+ * @param client            The client index.
  * @param iArguments        The number of arguments that were in the argument string.
  **/ 
-public Action DebugCommandCatched(const int clientIndex, const int iArguments)
+public Action DebugOnCommandCatched(int client, int iArguments)
 {
-    // Initialize variable
-    static bool bDebug;
-
     // Validate mode
-    if(!bDebug)
+    static bool bDebug;
+    if (!bDebug)
     {
         // Start the dump
         ServerCommand("sm prof start");
@@ -57,16 +56,16 @@ public Action DebugCommandCatched(const int clientIndex, const int iArguments)
     else 
     {
         // Initialize path
-        static char sPath[PLATFORM_MAX_PATH];
-        BuildPath(Path_SM, sPath, PLATFORM_MAX_PATH, "logs/debug_");
+        static char sPath[PLATFORM_LINE_LENGTH];
+        BuildPath(Path_SM, sPath, sizeof(sPath), "logs/debug_");
 
         // Initialize variables
-        static char sLog[PLATFORM_MAX_PATH];
-        static char sLine[PLATFORM_MAX_PATH];
+        static char sLog[PLATFORM_LINE_LENGTH];
+        static char sLine[PLATFORM_LINE_LENGTH];
 
-        // Gets the path to log file
+        // Gets path to log file
         FindConVar("con_logfile").GetString(sLog, sizeof(sLog));
-        Format(sLine, sizeof(sLine), "%s%d.txt", sPath, GetTime());
+        FormatEx(sLine, sizeof(sLine), "%s%d.txt", sPath, GetTime());
 
         // Stop the dump
         ServerCommand("sm prof stop; con_logfile \"%s\"; sm prof dump vprof; con_logfile \"%s\";", sLine, sLog);
@@ -75,7 +74,7 @@ public Action DebugCommandCatched(const int clientIndex, const int iArguments)
         LogEvent(false, LogType_Normal, LOG_DEBUG_DETAIL, LogModule_Debug, "Debug Tool", "Stop the dump debug logging. Results was saved in \"%s\"", sLine);
     }
 
-    // Reset the variable
+    // Resets the variable
     bDebug = !bDebug;
     return Plugin_Handled;
 }

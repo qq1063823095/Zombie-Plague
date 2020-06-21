@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          zombieplague.cpp
  *  Type:          Main 
  *  Description:   General plugin functions and defines.
  *
- *  Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)
+ *  Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,14 +20,11 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
 
-// Regex library
-#include <regex>
- 
 /**
  * @section Engine versions.
  **/
@@ -56,29 +53,14 @@
 /**
  * @endsection
  **/
- 
+
 /**
- * List of operation systems.
+ * @brief Called once when server is started. Will log a warning if a unsupported game is detected.
  **/
-enum EngineOS
-{
-    OS_Unknown,
-    OS_Windows,
-    OS_Linux,
-    OS_Mac
-};
- 
-/*
- * Engine functions
- */
- 
-/**
- * Called once when server is started. Will log a warning if a unsupported game is detected.
- **/
-void GameEngineInit(/*void*/)
+void GameEngineOnInit(/*void*/)
 {
     // Gets engine of the game
-    switch(GetEngineVersion(/*void*/))
+    switch (GetEngineVersion(/*void*/))
     {
         case Engine_Unknown :    
         {
@@ -169,547 +151,452 @@ void GameEngineInit(/*void*/)
             LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "Engine Validation", "Zombie Plague doesn't support: \"%s\"", ENGINE_CONTAGION);
         }
     }
-
-    // Unload the gamedata configs
-    ConfigUnload(/*void*/);
+    
+    // Load other offsets
+    fnInitGameConfOffset(gServerData.Config, view_as<int>(gServerData.Platform), "CServer::OS");
+    gServerData.Engine = fnCreateEngineInterface(gServerData.Config, "EngineInterface");
 }
 
 /**
- * Called when core is loaded.
+ * @brief Core module load function.
  **/
-void GameEngineLoad(/*void*/)
+void GameEngineOnLoad(/*void*/)
 {
     // Call forward
-    API_OnEngineExecute();
+    gForwardData._OnEngineExecute();
+    
+    // Map is load
+    gServerData.MapLoaded = true;
 }
 
 /**
- * Gets the server operating system.
- *
- * @param oS                The platform id.
- *
- * @return                  True or false.
+ * @brief Core module purge function.
  **/
-bool GameEnginePlatform(EngineOS oS)
+void GameEngineOnPurge(/*void*/)
 {
-    // Validate platform
-    if(gServerData[Server_PlatForm] == OS_Unknown)
-    {
-        // Initialize variable
-        char sBuffer[PLATFORM_MAX_PATH+PLATFORM_MAX_PATH];
-        
-        // Extract status string
-        ServerCommandEx(sBuffer, sizeof(sBuffer), "status");
-
-        // Validate length
-        if(strlen(sBuffer))
-        {
-            // Precompile a regular expression
-            Regex hRegex = CompileRegex("(os\\s+:\\s+\\w+)"); 
-            
-            // i = str index
-            int iCount = hRegex.Match(sBuffer); 
-            for(int i = 0; i < iCount; i++) 
-            { 
-                // Returns a matched substring from a regex handle
-                hRegex.GetSubString(i, sBuffer, sizeof(sBuffer)); 
-                
-                // Finds the first occurrence of a character in a string
-                int iSystem = FindCharInString(sBuffer, ' ', true) + 1;
-
-                // Validate operating system
-                gServerData[Server_PlatForm] = !strncmp(sBuffer[iSystem], "win", 3, false) ? OS_Windows : !strncmp(sBuffer[iSystem], "lin", 3, false) ? OS_Linux : OS_Mac;
-                break;
-            }
-            
-            // Decompile expression
-            delete hRegex;
-        }
-    }
-    
-    // Return on success
-    return (gServerData[Server_PlatForm] == oS);
+    // Clear map bool
+    gServerData.MapLoaded = false;
 }
 
 /*
- * Player functions
+ * Stocks core API.
  */
 
 /**
- * Returns true if the player is connected and alive, false if not.
+ * @brief Gets amount of total playing players.
  *
- * @param clientIndex       The client index.
- * @param clientAlive       (Optional) Set to true to validate that the client is alive, false to ignore.
- *
- * @return                  True or false.
+ * @return                  The amount of total playing players.
  **/
-stock bool IsPlayerExist(const int clientIndex, const bool clientAlive = true)
+stock int fnGetPlaying(/*void*/)
 {
-    // If client isn't valid, then stop
-    if(clientIndex <= 0 || clientIndex > MaxClients)
+    // Initialize index
+    int iPlaying;
+
+    // i = client index
+    for (int i = 1; i <= MaxClients; i++)
     {
-        return false;
-    }
-
-    // If client isn't connected, then stop
-    if(!IsClientConnected(clientIndex))
-    {
-        return false;
-    }
-
-    // If client isn't in game, then stop
-    if(!IsClientInGame(clientIndex) || IsClientInKickQueue(clientIndex)) //! Improved, thanks to fl0wer!
-    {
-        return false;
-    }
-
-    // If client is in GoTV, then stop
-    if(IsClientSourceTV(clientIndex))
-    {
-        return false;
-    } 
-
-    // If client isn't alive, then stop
-    if(clientAlive && !IsPlayerAlive(clientIndex))
-    {
-        return false;
-    }
-
-    // If client exist
-    return true;
-}
-
-/**
- * Returns whether a player is in a spesific group or not.
- *
- * @param clientIndex       The client index.
- * @param sGroup            The SourceMod group name to check.
- *
- * @return                  True or false.
- **/
-stock bool IsPlayerInGroup(const int clientIndex, const char[] sGroup)
-{
-    // Validate client
-    if(!IsPlayerExist(clientIndex, false))
-    {
-        return false;
-    }
-
-    /*********************************
-     *                               *
-     *   FLAG GROUP AUTHENTICATION   *
-     *                               *
-     *********************************/
-
-    // Finds a group by name
-    GroupId nGroup = FindAdmGroup(sGroup);
-    
-    // Validate group
-    if(nGroup == INVALID_GROUP_ID)
-    {
-        return false;
-    }
-     
-    // Retrieves a client AdminId
-    AdminId iD = GetUserAdmin(clientIndex);
-    
-    // Validate id
-    if(iD == INVALID_ADMIN_ID)
-    {
-        return false;
-    }
-
-    // Initialize variables
-    static char sGroupName[NORMAL_LINE_LENGTH];
-
-    // Gets immunity level
-    int iImmunity = GetAdmGroupImmunityLevel(nGroup);
-    
-    // i = group index
-    int iSize = GetAdminGroupCount(iD);
-    for(int i = 0; i < iSize; i++)
-    {
-        // Gets group name
-        nGroup = GetAdminGroup(iD, i, sGroupName, sizeof(sGroupName));
-
-        // If names match, then return index
-        if(!strcmp(sGroup, sGroupName, false) || iImmunity <= GetAdmGroupImmunityLevel(nGroup))
+        // Validate client
+        if (IsPlayerExist(i, false))
         {
-            return true;
+            // Increment amount
+            iPlaying++;
         }
     }
     
-    // No groups or no match
-    return false;
+    // Return amount
+    return iPlaying;
 }
-
-/*
- * Server functions
- */
  
 /**
- * Gets amount of total humans.
+ * @brief Gets amount of total humans.
  * 
  * @return                  The amount of total humans.
  **/
 stock int fnGetHumans(/*void*/)
 {
-    // Initialize variables
-    int nHumans;
+    // Initialize index
+    int iHumans;
     
     // i = client index
-    for(int i = 1; i <= MaxClients; i++)
+    for (int i = 1; i <= MaxClients; i++)
     {
         // Validate human
-        if(IsPlayerExist(i) && !gClientData[i][Client_Zombie])
+        if (IsPlayerExist(i) && !gClientData[i].Zombie)
         {
             // Increment amount
-            nHumans++;
+            iHumans++;
         }
     }
     
     // Return amount
-    return nHumans;
+    return iHumans;
 }
 
 /**
- * Gets amount of total zombies.
+ * @brief Gets amount of total zombies.
  *
  * @return                  The amount of total zombies.
  **/
 stock int fnGetZombies(/*void*/)
 {
-    // Initialize variables
-    int nZombies;
+    // Initialize index
+    int iZombies;
     
     // i = client index
-    for(int i = 1; i <= MaxClients; i++)
+    for (int i = 1; i <= MaxClients; i++)
     {
         // Validate zombie
-        if(IsPlayerExist(i) && gClientData[i][Client_Zombie])
+        if (IsPlayerExist(i) && gClientData[i].Zombie)
         {
             // Increment amount    
-            nZombies++;
+            iZombies++;
         }
     }
     
     // Return amount
-    return nZombies;
+    return iZombies;
 }
 
 /**
- * Gets amount of total alive players.
+ * @brief Gets amount of total alive players.
  *
  * @return                  The amount of total alive players.
  **/
 stock int fnGetAlive(/*void*/)
 {
-    // Initialize variables
-    int nAlive;
+    // Initialize index
+    int iAlive;
 
     // i = client index
-    for(int i = 1; i <= MaxClients; i++)
+    for (int i = 1; i <= MaxClients; i++)
     {
         // Validate client
-        if(IsPlayerExist(i))
+        if (IsPlayerExist(i))
         {
             // Increment amount
-            nAlive++;
+            iAlive++;
         }
     }
     
     // Return amount
-    return nAlive;
+    return iAlive;
 }
 
 /**
- * Gets index of the random human.
+ * @brief Gets index of the random human.
  *
  * @return                  The index of random human.
  **/
 stock int fnGetRandomHuman(/*void*/)
 {
     // Initialize variables
-    int nRandom; static int clientIndex[MAXPLAYERS+1];
+    int iRandom; static int client[MAXPLAYERS+1];
 
     // i = client index
-    for(int i = 1; i <= MaxClients; i++)
+    for (int i = 1; i <= MaxClients; i++)
     {
         // Validate human
-        if(IsPlayerExist(i) && !gClientData[i][Client_Zombie] && !gClientData[i][Client_Survivor])
+        if (IsPlayerExist(i) && !gClientData[i].Zombie)
         {
             // Increment amount
-            clientIndex[nRandom++] = i;
+            client[iRandom++] = i;
         }
     }
 
-    // Return amount
-    return (nRandom) ? clientIndex[GetRandomInt(0, nRandom-1)] : -1;
+    // Return index
+    return (iRandom) ? client[GetRandomInt(0, iRandom-1)] : -1;
 }
 
 /**
- * Gets index of the random zombie.
+ * @brief Gets index of the random zombie.
  *
- * @return      The index of random zombie.
+ * @return                  The index of random zombie.
  **/
 stock int fnGetRandomZombie(/*void*/)
 {
     // Initialize variables
-    int nRandom; static int clientIndex[MAXPLAYERS+1];
+    int iRandom; static int client[MAXPLAYERS+1];
 
     // i = client index
-    for(int i = 1; i <= MaxClients; i++)
+    for (int i = 1; i <= MaxClients; i++)
     {
         // Validate zombie
-        if(IsPlayerExist(i) && gClientData[i][Client_Zombie] && !gClientData[i][Client_Nemesis])
+        if (IsPlayerExist(i) && gClientData[i].Zombie)
         {
             // Increment amount
-            clientIndex[nRandom++] = i;
+            client[iRandom++] = i;
         }
     }
 
-    // Return amount
-    return (nRandom) ? clientIndex[GetRandomInt(0, nRandom-1)] : -1;
+    // Return index
+    return (iRandom) ? client[GetRandomInt(0, iRandom-1)] : -1;
 }
 
 /**
- * Gets index of the random survivor.
- *
- * @return                  The index of random survivor.
- **/
-stock int fnGetRandomSurvivor(/*void*/)
-{
-    // Initialize variables
-    int nRandom; static int clientIndex[MAXPLAYERS+1];
-
-    // i = client index
-    for(int i = 1; i <= MaxClients; i++)
-    {
-        // Validate survivor
-        if(IsPlayerExist(i) && gClientData[i][Client_Survivor])
-        {
-            // Increment amount
-            clientIndex[nRandom++] = i;
-        }
-    }
-
-    // Return amount
-    return (nRandom) ? clientIndex[GetRandomInt(0, nRandom-1)] : -1;
-}
-
-/**
- * Gets index of the random nemesis.
- *
- * @return                  The index of random nemesis.
- **/
-stock int fnGetRandomNemesis(/*void*/)
-{
-    // Initialize variables
-    int nRandom; static int clientIndex[MAXPLAYERS+1];
-
-    // i = client index
-    for(int i = 1; i <= MaxClients; i++)
-    {
-        // Validate nemesis
-        if(IsPlayerExist(i) && gClientData[i][Client_Nemesis])
-        {
-            // Increment amount
-            clientIndex[nRandom++] = i;
-        }
-    }
-
-    // Return amount
-    return (nRandom) ? clientIndex[GetRandomInt(0, nRandom-1)] : -1;
-}
-
-/**
- * Gets amount of total playing players.
- *
- * @return                  The amount of total playing players.
- **/
-stock int fnGetPlaying(/*void*/)
-{
-    // Initialize variables
-    int nPlaying;
-
-    // i = client index
-    for(int i = 1; i <= MaxClients; i++)
-    {
-        // Validate client
-        if(IsPlayerExist(i, false))
-        {
-            // Increment amount
-            nPlaying++;
-        }
-    }
-    
-    // Return amount
-    return nPlaying;
-}
-
-/**
- * Returns an offset value from a given config.
+ * @brief Returns an offset value from a given config.
  *
  * @param gameConf          The game config handle.
- * @param iOffset           An offset, or -1 on failure. (Destanation)
+ * @param iOffset           An offset, or -1 on failure.
  * @param sKey              Key to retrieve from the offset section.
  **/
-stock void fnInitGameConfOffset(Handle gameConf, int &iOffset, const char[] sKey)
+stock void fnInitGameConfOffset(GameData gameConf, int &iOffset, char[] sKey)
 {
     // Validate offset
-    if((iOffset = GameConfGetOffset(gameConf, sKey)) == -1)
+    if ((iOffset = gameConf.GetOffset(sKey)) == -1)
     {
         LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to get offset: \"%s\"", sKey);
     }
 }
 
 /**
- * Given a server classname, finds a networkable send property offset.
+ * @brief Returns an address value from a given config.
  *
- * @param iOffset           An offset, or -1 on failure. (Destanation) 
- * @param sServerClass      The classname.
+ * @param gameConf          The game config handle.
+ * @param pAddress          An address, or null on failure.
+ * @param sKey              Key to retrieve from the address section.
+ **/
+stock void fnInitGameConfAddress(GameData gameConf, Address &pAddress, char[] sKey)
+{
+    // Validate address
+    if ((pAddress = gameConf.GetAddress(sKey)) == Address_Null)
+    {
+        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to get address: \"%s\"", sKey);
+    }
+}
+
+/**
+ * @brief Returns the value of a key from a given config.
+ *
+ * @param gameConf          The game config handle.
+ * @param sKey              Key to retrieve from the key section.
+ * @param sIdentifier       The string to return identifier in.
+ * @param iMaxLen           The lenght of string.
+ **/
+stock void fnInitGameConfKey(GameData gameConf, char[] sKey, char[] sIdentifier, int iMaxLen)
+{
+    // Validate key
+    if (!gameConf.GetKeyValue(sKey, sIdentifier, iMaxLen)) 
+    {
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Engine, "GameData Validation", "Failed to get key: \"%s\"", sKey);
+    }
+}
+
+/**
+ * @brief Given an entity classname, finds a networkable send property offset.
+ *
+ * @param iOffset           An offset, or -1 on failure.
+ * @param sClass            The entity classname.
  * @param sProp             The property name.
  **/
-stock void fnInitSendPropOffset(int &iOffset, const char[] sServerClass, const char[] sProp)
+stock void fnInitSendPropOffset(int &iOffset, char[] sClass, char[] sProp)
 {
     // Validate prop
-    if((iOffset = FindSendPropInfo(sServerClass, sProp)) < 1)
+    if ((iOffset = FindSendPropInfo(sClass, sProp)) < 1)
     {
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to find prop: \"%s\"", sProp);
+        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to find send prop: \"%s\"", sProp);
     }
 }
 
 /**
- * Searches for the index of a given string in a dispatch table.
+ * @brief Given an entity index, finds a networkable data property offset.
  *
- * @param sEffect           The effect name.
- * @return                  The item index.
+ * @param iOffset           An offset, or -1 on failure.
+ * @param entity            The entity index.
+ * @param sProp             The property name.
  **/
-stock int fnGetEffectIndex(const char[] sEffect)
+stock void fnInitDataPropOffset(int &iOffset, int entity, char[] sProp)
 {
-    // Initialize the table index
-    static int tableIndex = INVALID_STRING_TABLE;
-
-    // Validate table
-    if(tableIndex == INVALID_STRING_TABLE)
+    // Validate prop
+    if ((iOffset = FindDataMapInfo(entity, sProp)) < 1)
     {
-        // Searches for a string table
-        tableIndex = FindStringTable("EffectDispatch");
+        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to find data prop: \"%s\"", sProp);
     }
-
-    // Searches for the index of a given string in a string table
-    int itemIndex = FindStringIndex(tableIndex, sEffect);
-
-    // Validate item
-    if(itemIndex != INVALID_STRING_INDEX)
-    {
-        return itemIndex;
-    }
-
-    // Return on the unsuccess
-    return 0;
 }
 
 /**
- * Searches for the index of a given string in an effect table.
+ * @brief This is the primary exported function by a dll, referenced by name via dynamic binding
+ *        that exposes an opqaue function pointer to the interface.
  *
- * @param sEffect           The effect name.
- * @return                  The item index.
+ * @param gameConf          The game config handle.
+ * @param sKey              Key to retrieve from the key section.
+ * @param pAddress          (Optional) The optional interface address.
  **/
-stock int fnGetParticleEffectIndex(const char[] sEffect)
+stock Address fnCreateEngineInterface(GameData gameConf, char[] sKey, Address pAddress = Address_Null) 
 {
-    // Initialize the table index
-    static int tableIndex = INVALID_STRING_TABLE;
-
-    // Validate table
-    if(tableIndex == INVALID_STRING_TABLE)
+    // Initialize intercace call
+    static Handle hInterface = null;
+    if (hInterface == null) 
     {
-        // Searches for a string table
-        tableIndex = FindStringTable("ParticleEffectNames");
-    }
+        // Starts the preparation of an SDK call
+        StartPrepSDKCall(SDKCall_Static);
+        PrepSDKCall_SetFromConf(gameConf, SDKConf_Signature, "CreateInterface");
 
-    // Searches for the index of a given string in a string table
-    int itemIndex = FindStringIndex(tableIndex, sEffect);
+        // Adds a parameter to the calling convention. This should be called in normal ascending order
+        PrepSDKCall_AddParameter(SDKType_String, SDKPass_Pointer);
+        PrepSDKCall_AddParameter(SDKType_PlainOldData, SDKPass_Plain, VDECODE_FLAG_ALLOWNULL);
+        PrepSDKCall_SetReturnInfo(SDKType_PlainOldData, SDKPass_Plain);
 
-    // Validate item
-    if(itemIndex != INVALID_STRING_INDEX)
-    {
-        return itemIndex;
-    }
-
-    // Return on the unsuccess
-    return 0;
-}
-
-/**
- * Precache the particle in the effect table.
- *
- * @param sEffect           The effect name.
- **/
-stock void fnPrecacheParticleEffect(const char[] sEffect)
-{
-    // Initialize the table index
-    static int tableIndex = INVALID_STRING_TABLE;
-
-    // Validate table
-    if(tableIndex == INVALID_STRING_TABLE)
-    {
-        // Searches for a string table
-        tableIndex = FindStringTable("ParticleEffectNames");
-    }
-
-    // If particle doesn't precache yet, then continue
-    ///if(FindStringIndex(tableIndex, sEffect) == INVALID_STRING_INDEX)
-
-    // Precache particle
-    bool bSave = LockStringTables(false);
-    AddToStringTable(tableIndex, sEffect);
-    LockStringTables(bSave);
-}
-
-/**
- * Precache the sound in the sounds table.
- *
- * @param sPath             The sound path.
- * @return                  True if was precached, false otherwise.
- **/
-stock bool fnPrecacheSoundQuirk(const char[] sPath)
-{
-    // Extract value string
-    static char sSound[PLATFORM_MAX_PATH];
-    StrExtract(sSound, sPath, 0, PLATFORM_MAX_PATH);
-
-    /// Look here: https://wiki.alliedmods.net/Csgo_quirks#Fake_precaching_and_EmitSound
-    if(ReplaceStringEx(sSound, sizeof(sSound), "sound", "*", 5, 1, true) != -1)
-    {
-        // Initialize the table index
-        static int tableIndex = INVALID_STRING_TABLE;
-
-        // Validate table
-        if(tableIndex == INVALID_STRING_TABLE)
+        // Validate call
+        if ((hInterface = EndPrepSDKCall()) == null)
         {
-            // Searches for a string table
-            tableIndex = FindStringTable("soundprecache");
-        }
-
-        // If sound doesn't precache yet, then continue
-        if(FindStringIndex(tableIndex, sSound) == INVALID_STRING_INDEX)
-        {
-            // Add file to download table
-            AddFileToDownloadsTable(sPath);
-
-            // Precache sound
-            ///bool bSave = LockStringTables(false);
-            AddToStringTable(tableIndex, sSound);
-            ///LockStringTables(bSave);
+            LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to load SDK call \"CreateInterface\". Update signature in \"%s\"", PLUGIN_CONFIG);
+            return Address_Null;
         }
     }
-    else
+
+    // Gets the value of a key from a config
+    static char sInterface[NORMAL_LINE_LENGTH];
+    fnInitGameConfKey(gameConf, sKey, sInterface, sizeof(sInterface));
+
+    // Gets the address of a given interface and key
+    Address pInterface = SDKCall(hInterface, sInterface, pAddress);
+    if (pInterface == Address_Null) 
     {
-        LogEvent(false, LogType_Error, LOG_CORE_EVENTS, LogModule_Engine, "Config Validation", "Wrong sound path: %s", sPath);
-        return false;
+        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Engine, "GameData Validation", "Failed to get pointer to interface %s(\"%s\")", sKey, sInterface);
+        return Address_Null;
     }
-    
+
     // Return on the success
-    return true;
+    return pInterface;
+}
+
+/**
+ * @brief Create a memory for the custom convention call.
+ *
+ * @return                  The zero memory address.
+ **/
+stock Address fnCreateMemoryForSDKCall(/*void*/)
+{
+    // Validate zero memory
+    static Address pZeroMemory = Address_Null;
+    if (pZeroMemory != Address_Null)
+    {
+        return pZeroMemory;
+    }
+   
+    // Gets the server address
+    Address pServerBase; 
+    fnInitGameConfAddress(gServerData.Config, pServerBase, "server");
+    int pAddress = view_as<int>(pServerBase) + fnGetModuleSize(pServerBase) - 1;
+   
+    // Find the free memory
+    for(;;)
+    {
+        int iByte = LoadFromAddress(view_as<Address>(pAddress), NumberType_Int8);
+        if (iByte != 0x00)
+        {
+            break;
+        }
+       
+        pAddress--;
+    }
+   
+    /* Align for safe code injection */
+    pZeroMemory = view_as<Address>(pAddress + 0x100 & 0xFFFFFF00); // 255 bytes
+    return pZeroMemory;
+}
+
+/**
+ * @brief Gets the size of a module in the memory.
+ *
+ * @param pAddress          The module address.
+ * @return                  The size value.
+ **/
+stock int fnGetModuleSize(Address pAddress)
+{
+    int iOffset = LoadFromAddress(pAddress + view_as<Address>(0x3C), NumberType_Int32);    // NT headers offset
+    return LoadFromAddress(pAddress + view_as<Address>(iOffset + 0x50), NumberType_Int32); // nt->OptionalHeader.SizeOfImage
+}
+
+/**
+ * @brief Copies the values of num bytes from the location pointed to by source directly to the memory block pointed to by destination.
+ *
+ * @param pDest        The destination address where the content is to be copied.
+ * @param sSource      The source of data to be copied.
+ * @param iSize        The number of bytes to copy.
+ **/
+stock void memcpy(Address pDest, char[] sSource, int iSize)
+{
+    // For more copying speed
+    int i = iSize / 4;
+    memcpy4b(pDest, view_as<any>(sSource), i);
+   
+    // Copy the rest of staff
+    for(i *= 4, pDest += view_as<Address>(i); i < iSize; i++)
+    {
+        StoreToAddress(pDest++, sSource[i], NumberType_Int8);
+    }
+}
+
+/**
+ * @brief Copies the 4 bytes from the location pointed to by source directly to the memory block pointed to by destination. 
+ *
+ * @param pDest        The destination address where the content is to be copied.
+ * @param sSource      The source of data to be copied.
+ * @param iSize        The number of bytes to copy.
+ **/
+stock void memcpy4b(Address pDest, any[] sSource, int iSize)
+{
+    // Copy 4 bytes at once
+    for(int i = 0; i < iSize; i++)
+    {
+        StoreToAddress(pDest, sSource[i], NumberType_Int32);
+        pDest += view_as<Address>(4);
+    }
+}
+
+/**
+ * @brief Writes the DWord D (i.e. 4 bytes) to the string. 
+ *
+ * @param asm             The assemly string.
+ * @param pAddress        The address of the call.
+ * @param iOffset         (Optional) The address offset. (Where 0x0 starts)
+ **/
+stock void writeDWORD(char[] asm, any pAddress, int iOffset = 0)
+{
+    asm[iOffset]   = pAddress & 0xFF;
+    asm[iOffset+1] = pAddress >> 8 & 0xFF;
+    asm[iOffset+2] = pAddress >> 16 & 0xFF;
+    asm[iOffset+3] = pAddress >> 24 & 0xFF;
+}
+
+/**
+ * @brief Removes a hook for when a game event is fired. (Avoid errors)
+ *
+ * @param sName             The name of the event.
+ * @param hCallBack         An EventHook function pointer.
+ * @param eMode             (Optional) EventHookMode determining the type of hook.
+ * @error                   No errors.
+ **/
+stock void UnhookEvent2(char[] sName, EventHook hCallBack, EventHookMode eMode = EventHookMode_Post)
+{
+    HookEvent(sName, hCallBack, eMode);
+    UnhookEvent(sName, hCallBack, eMode);
+}
+
+/**
+ * @brief Removes a previously added command listener, in reverse order of being added.
+ *
+ * @param hCallBack         The callback.
+ * @param sCommand          The command, or if not specified, a global listener.
+ *                          The command is case insensitive.
+ * @error                   No errors..
+ **/
+stock void RemoveCommandListener2(CommandListener hCallBack, char[] sCommand = "")
+{
+    AddCommandListener(hCallBack, sCommand);
+    RemoveCommandListener(hCallBack, sCommand);
+}
+
+/**
+ * @brief Removes a hook for when a console variable's value is changed.
+ *
+ * @param hConVar           The handle to the convar.
+ * @param hCallBack         An OnConVarChanged function pointer.
+ * @error                   No errors..
+ **/
+stock void UnhookConVarChange2(ConVar hConVar, ConVarChanged hCallBack)
+{
+    HookConVarChange(hConVar, hCallBack);
+    UnhookConVarChange(hConVar, hCallBack);
 }

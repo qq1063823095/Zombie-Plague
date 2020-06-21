@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          playereffects.cpp
  *  Type:          Module 
  *  Description:   Player visual effects.
  *
- *  Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)
+ *  Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,20 +20,84 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
 
 /**
- * Client has been infected.
- * 
- * @param clientIndex       The client index.
- * @param nemesisMode       (Optional) Indicates that client will be a nemesis.
- * @param respawnMode       (Optional) Indicates that infection was on spawn.
+ * @brief Hook player effects cvar changes.
  **/
-void PlayerVEffectsOnClientInfected(const int clientIndex, const bool nemesisMode = false, const bool respawnMode = false)
+void PlayerVEffectsOnCvarInit(/*void*/)
 {
+    // Create cvars
+    gCvarList.VEFFECTS_INFECT                 = FindConVar("zp_veffects_infect"); 
+    gCvarList.VEFFECTS_INFECT_FADE            = FindConVar("zp_veffects_infect_fade"); 
+    gCvarList.VEFFECTS_INFECT_FADE_TIME       = FindConVar("zp_veffects_infect_fade_time"); 
+    gCvarList.VEFFECTS_INFECT_FADE_DURATION   = FindConVar("zp_veffects_infect_fade_duration"); 
+    gCvarList.VEFFECTS_INFECT_FADE_R          = FindConVar("zp_veffects_infect_fade_R");
+    gCvarList.VEFFECTS_INFECT_FADE_G          = FindConVar("zp_veffects_infect_fade_G");
+    gCvarList.VEFFECTS_INFECT_FADE_B          = FindConVar("zp_veffects_infect_fade_B");
+    gCvarList.VEFFECTS_INFECT_FADE_A          = FindConVar("zp_veffects_infect_fade_A");
+    gCvarList.VEFFECTS_INFECT_SHAKE           = FindConVar("zp_veffects_infect_shake"); 
+    gCvarList.VEFFECTS_INFECT_SHAKE_AMP       = FindConVar("zp_veffects_infect_shake_amp");
+    gCvarList.VEFFECTS_INFECT_SHAKE_FREQUENCY = FindConVar("zp_veffects_infect_shake_frequency");
+    gCvarList.VEFFECTS_INFECT_SHAKE_DURATION  = FindConVar("zp_veffects_infect_shake_duration"); 
+    gCvarList.VEFFECTS_HUMANIZE               = FindConVar("zp_veffects_humanize"); 
+    gCvarList.VEFFECTS_HUMANIZE_FADE          = FindConVar("zp_veffects_humanize_fade"); 
+    gCvarList.VEFFECTS_HUMANIZE_FADE_TIME     = FindConVar("zp_veffects_humanize_fade_time"); 
+    gCvarList.VEFFECTS_HUMANIZE_FADE_DURATION = FindConVar("zp_veffects_humanize_fade_duration"); 
+    gCvarList.VEFFECTS_HUMANIZE_FADE_R        = FindConVar("zp_veffects_humanize_fade_R");
+    gCvarList.VEFFECTS_HUMANIZE_FADE_G        = FindConVar("zp_veffects_humanize_fade_G");
+    gCvarList.VEFFECTS_HUMANIZE_FADE_B        = FindConVar("zp_veffects_humanize_fade_B");
+    gCvarList.VEFFECTS_HUMANIZE_FADE_A        = FindConVar("zp_veffects_humanize_fade_A");
+    gCvarList.VEFFECTS_RESPAWN                = FindConVar("zp_veffects_respawn"); 
+    gCvarList.VEFFECTS_RESPAWN_NAME           = FindConVar("zp_veffects_respawn_name");
+    gCvarList.VEFFECTS_RESPAWN_ATTACH         = FindConVar("zp_veffects_respawn_attachment"); 
+    gCvarList.VEFFECTS_RESPAWN_DURATION       = FindConVar("zp_veffects_respawn_duration");
+    gCvarList.VEFFECTS_HEAL                   = FindConVar("zp_veffects_heal"); 
+    gCvarList.VEFFECTS_HEAL_NAME              = FindConVar("zp_veffects_heal_name");
+    gCvarList.VEFFECTS_HEAL_ATTACH            = FindConVar("zp_veffects_heal_attachment"); 
+    gCvarList.VEFFECTS_HEAL_DURATION          = FindConVar("zp_veffects_heal_duration");
+    gCvarList.VEFFECTS_HEAL_FADE              = FindConVar("zp_veffects_heal_fade"); 
+    gCvarList.VEFFECTS_HEAL_FADE_TIME         = FindConVar("zp_veffects_heal_fade_time"); 
+    gCvarList.VEFFECTS_HEAL_FADE_DURATION     = FindConVar("zp_veffects_heal_fade_duration"); 
+    gCvarList.VEFFECTS_HEAL_FADE_R            = FindConVar("zp_veffects_heal_fade_R");
+    gCvarList.VEFFECTS_HEAL_FADE_G            = FindConVar("zp_veffects_heal_fade_G");
+    gCvarList.VEFFECTS_HEAL_FADE_B            = FindConVar("zp_veffects_heal_fade_B");
+    gCvarList.VEFFECTS_HEAL_FADE_A            = FindConVar("zp_veffects_heal_fade_A");
+    gCvarList.VEFFECTS_LEAP                   = FindConVar("zp_veffects_leap"); 
+    gCvarList.VEFFECTS_LEAP_NAME              = FindConVar("zp_veffects_leap_name");
+    gCvarList.VEFFECTS_LEAP_ATTACH            = FindConVar("zp_veffects_leap_attachment"); 
+    gCvarList.VEFFECTS_LEAP_DURATION          = FindConVar("zp_veffects_leap_duration");
+    gCvarList.VEFFECTS_LEAP_SHAKE             = FindConVar("zp_veffects_leap_shake"); 
+    gCvarList.VEFFECTS_LEAP_SHAKE_AMP         = FindConVar("zp_veffects_leap_shake_amp");
+    gCvarList.VEFFECTS_LEAP_SHAKE_FREQUENCY   = FindConVar("zp_veffects_leap_shake_frequency");
+    gCvarList.VEFFECTS_LEAP_SHAKE_DURATION    = FindConVar("zp_veffects_leap_shake_duration"); 
+}
+
+/**
+ * @brief Client has been infected.
+ * 
+ * @param client            The client index.
+ * @param attacker          The attacker index.
+ **/
+void PlayerVEffectsOnClientInfected(int client, int attacker)
+{
+    // If infect shake disabled, then skip
+    if (!gCvarList.VEFFECTS_INFECT_SHAKE.BoolValue) 
+    {
+        // Shake a client screen
+        VEffectsShakeClientScreen(client, gCvarList.VEFFECTS_INFECT_SHAKE_AMP, gCvarList.VEFFECTS_INFECT_SHAKE_FREQUENCY, gCvarList.VEFFECTS_INFECT_SHAKE_DURATION);
+    }
+    
+    // If infect fade disabled, then skip
+    if (!gCvarList.VEFFECTS_INFECT_FADE.BoolValue) 
+    {
+        // Fade a client screen
+        VEffectsFadeClientScreen(client, gCvarList.VEFFECTS_INFECT_FADE_DURATION, gCvarList.VEFFECTS_INFECT_FADE_TIME, gCvarList.VEFFECTS_INFECT_FADE_R, gCvarList.VEFFECTS_INFECT_FADE_G, gCvarList.VEFFECTS_INFECT_FADE_B, gCvarList.VEFFECTS_INFECT_FADE_A);
+    }
+    
     // Initialize particles char
     static char sParticle[SMALL_LINE_LENGTH];
     static char sAttachment[SMALL_LINE_LENGTH];
@@ -42,89 +106,137 @@ void PlayerVEffectsOnClientInfected(const int clientIndex, const bool nemesisMod
     static float flDuration;
 
     // Validate respawn
-    if(respawnMode)
+    if (gServerData.RoundStart && !attacker)
     {
         // If respawn effect disabled, then stop
-        if(!gCvarList[CVAR_VEFFECTS_RESPAWN].BoolValue) 
+        if (!gCvarList.VEFFECTS_RESPAWN.BoolValue) 
         {
             return;
         }
         
         // If the duration is zero, then stop
-        flDuration = gCvarList[CVAR_VEFFECTS_RESPAWN_DURATION].FloatValue;
-        if(!flDuration)
+        flDuration = gCvarList.VEFFECTS_RESPAWN_DURATION.FloatValue;
+        if (!flDuration)
         {
             return;
         }
 
         // Gets respawn particle
-        gCvarList[CVAR_VEFFECTS_RESPAWN_NAME].GetString(sParticle, sizeof(sParticle));
-        gCvarList[CVAR_VEFFECTS_RESPAWN_ATTACH].GetString(sAttachment, sizeof(sAttachment));
+        gCvarList.VEFFECTS_RESPAWN_NAME.GetString(sParticle, sizeof(sParticle));
+        gCvarList.VEFFECTS_RESPAWN_ATTACH.GetString(sAttachment, sizeof(sAttachment));
     }
     else
     {
-        // Validate nemesis
-        if(nemesisMode)
+        // If infect effect disabled, then stop
+        if (!gCvarList.VEFFECTS_INFECT.BoolValue) 
         {
-            // If nemesis effect disabled, then stop
-            if(!gCvarList[CVAR_VEFFECTS_NEMESIS].BoolValue) 
-            {
-                return;
-            }
-            
-            // If the duration is zero, then stop
-            flDuration = gCvarList[CVAR_VEFFECTS_NEMESIS_DURATION].FloatValue;
-            if(!flDuration)
-            {
-                return;
-            }
-
-            // Gets nemesis particle
-            gCvarList[CVAR_VEFFECTS_NEMESIS_NAME].GetString(sParticle, sizeof(sParticle)); 
-            gCvarList[CVAR_VEFFECTS_NEMESIS_ATTACH].GetString(sAttachment, sizeof(sAttachment));
+            return;
         }
-        // Validate zombie
-        else
+        
+        // If the duration is zero, then stop
+        flDuration = ClassGetEffectTime(gClientData[client].Class);
+        if (!flDuration)
         {
-            // If infect effect disabled, then stop
-            if(!gCvarList[CVAR_VEFFECTS_INFECT].BoolValue) 
-            {
-                return;
-            }
-            
-            // If the duration is zero, then stop
-            flDuration = gCvarList[CVAR_VEFFECTS_INFECT_DURATION].FloatValue;
-            if(!flDuration)
-            {
-                return;
-            }
-
-            // Gets infect particle
-            gCvarList[CVAR_VEFFECTS_INFECT_NAME].GetString(sParticle, sizeof(sParticle)); 
-            gCvarList[CVAR_VEFFECTS_INFECT_ATTACH].GetString(sAttachment, sizeof(sAttachment));
+            return;
         }
+
+        // Gets infect particle
+        ClassGetEffectName(gClientData[client].Class, sParticle, sizeof(sParticle)); 
+        ClassGetEffectAttach(gClientData[client].Class, sAttachment, sizeof(sAttachment));
     }
 
-    // Emit effect
-    VEffectSpawnParticle(clientIndex, sAttachment, sParticle, flDuration);
+    // Emit a infect effect
+    ParticlesCreate(client, sAttachment, sParticle, flDuration);
 }
 
 /**
- * Client has been regenerating.
+ * @brief Client has been humanized.
  * 
- * @param clientIndex       The client index.
+ * @param client            The client index.
  **/
-void PlayerVEffectsOnClientRegen(const int clientIndex)
+void PlayerVEffectsOnClientHumanized(int client)
 {
+    // If humanize fade disabled, then skip
+    if (!gCvarList.VEFFECTS_HUMANIZE_FADE.BoolValue) 
+    {
+        // Fade a client screen
+        VEffectsFadeClientScreen(client, gCvarList.VEFFECTS_HUMANIZE_FADE_DURATION, gCvarList.VEFFECTS_HUMANIZE_FADE_TIME, gCvarList.VEFFECTS_HUMANIZE_FADE_R, gCvarList.VEFFECTS_HUMANIZE_FADE_G, gCvarList.VEFFECTS_HUMANIZE_FADE_B, gCvarList.VEFFECTS_HUMANIZE_FADE_A);
+    }
+    
+    // Initialize particles char
+    static char sParticle[SMALL_LINE_LENGTH];
+    static char sAttachment[SMALL_LINE_LENGTH];
+    
+    // Initialize duration variable
+    static float flDuration;
+    
+    // Validate respawn
+    if (gServerData.RoundNew)
+    {
+        // If respawn effect disabled, then stop
+        if (!gCvarList.VEFFECTS_RESPAWN.BoolValue) 
+        {
+            return;
+        }
+        
+        // If the duration is zero, then stop
+        flDuration = gCvarList.VEFFECTS_RESPAWN_DURATION.FloatValue;
+        if (!flDuration)
+        {
+            return;
+        }
+
+        // Gets respawn particle
+        gCvarList.VEFFECTS_RESPAWN_NAME.GetString(sParticle, sizeof(sParticle));
+        gCvarList.VEFFECTS_RESPAWN_ATTACH.GetString(sAttachment, sizeof(sAttachment));
+    }
+    else
+    {
+        // If humanize effect disabled, then stop
+        if (!gCvarList.VEFFECTS_HUMANIZE.BoolValue) 
+        {
+            return;
+        }
+        
+        // If the duration is zero, then stop
+        flDuration = ClassGetEffectTime(gClientData[client].Class);
+        if (!flDuration)
+        {
+            return;
+        }
+
+        // Gets humanize particle
+        ClassGetEffectName(gClientData[client].Class, sParticle, sizeof(sParticle)); 
+        ClassGetEffectAttach(gClientData[client].Class, sAttachment, sizeof(sAttachment));
+    }
+    
+    // Emit a humanize effect
+    ParticlesCreate(client, sAttachment, sParticle, flDuration);
+}
+
+/**
+ * @brief Client has been regenerating.
+ * 
+ * @param client            The client index.
+ **/
+void PlayerVEffectsOnClientRegen(int client)
+{
+    // If regeneration fade disabled, then skip
+    if (!gCvarList.VEFFECTS_HEAL_FADE.BoolValue) 
+    {
+        // Fade a client screen
+        VEffectsFadeClientScreen(client, gCvarList.VEFFECTS_HEAL_FADE_DURATION, gCvarList.VEFFECTS_HEAL_FADE_TIME, gCvarList.VEFFECTS_HEAL_FADE_R, gCvarList.VEFFECTS_HEAL_FADE_G, gCvarList.VEFFECTS_HEAL_FADE_B, gCvarList.VEFFECTS_HEAL_FADE_A);
+    }
+    
     // If regeneration effect disabled, then stop
-    if(!gCvarList[CVAR_VEFFECTS_HEAL].BoolValue) 
+    if (!gCvarList.VEFFECTS_HEAL.BoolValue) 
     {
         return;
     }
     
     // If the duration is zero, then stop
-    float flDuration = gCvarList[CVAR_VEFFECTS_HEAL_DURATION].FloatValue;
-    if(!flDuration)
+    float flDuration = gCvarList.VEFFECTS_HEAL_DURATION.FloatValue;
+    if (!flDuration)
     {
         return;
     }
@@ -134,88 +246,36 @@ void PlayerVEffectsOnClientRegen(const int clientIndex)
     static char sAttachment[SMALL_LINE_LENGTH];
     
     // Gets healing particle
-    gCvarList[CVAR_VEFFECTS_HEAL_NAME].GetString(sParticle, sizeof(sParticle));
-    gCvarList[CVAR_VEFFECTS_HEAL_ATTACH].GetString(sAttachment, sizeof(sAttachment));
+    gCvarList.VEFFECTS_HEAL_NAME.GetString(sParticle, sizeof(sParticle));
+    gCvarList.VEFFECTS_HEAL_ATTACH.GetString(sAttachment, sizeof(sAttachment));
     
-    // Emit heal effect
-    VEffectSpawnParticle(clientIndex, sAttachment, sParticle, flDuration);
+    // Emit a heal effect
+    ParticlesCreate(client, sAttachment, sParticle, flDuration);
 }
 
 /**
- * Client has been humanized.
+ * @brief Client has been leap jumped.
  * 
- * @param clientIndex       The client index.
- * @param survivorMode      (Optional) Indicates that client will be a survivor.
+ * @param client            The client index.
  **/
-void PlayerVEffectsOnClientHumanized(const int clientIndex, const bool survivorMode = false)
+void PlayerVEffectsOnClientJump(int client)
 {
-    // Initialize particles char
-    static char sParticle[SMALL_LINE_LENGTH];
-    static char sAttachment[SMALL_LINE_LENGTH];
-    
-    // Initialize duration variable
-    static float flDuration;
-    
-    // Validate survivor
-    if(survivorMode)
+    // If infect shake disabled, then skip
+    if (!gCvarList.VEFFECTS_LEAP_SHAKE.BoolValue) 
     {
-        // If survivor effect disabled, then stop
-        if(!gCvarList[CVAR_VEFFECTS_SURVIVOR].BoolValue) 
-        {
-            return;
-        }
-        
-        // If the duration is zero, then stop
-        flDuration = gCvarList[CVAR_VEFFECTS_SURVIVOR_DURATION].FloatValue;
-        if(!flDuration)
-        {
-            return;
-        }
-
-        // Gets survivor particle
-        gCvarList[CVAR_VEFFECTS_SURVIVOR_NAME].GetString(sParticle, sizeof(sParticle)); 
-        gCvarList[CVAR_VEFFECTS_SURVIVOR_ATTACH].GetString(sAttachment, sizeof(sAttachment)); 
-    }
-    else
-    {
-        // If antidot effect disabled, then stop
-        if(!gCvarList[CVAR_VEFFECTS_ANTIDOT].BoolValue) 
-        {
-            return;
-        }
-        
-        // If the duration is zero, then stop
-        flDuration = gCvarList[CVAR_VEFFECTS_ANTIDOT_DURATION].FloatValue;
-        if(!flDuration)
-        {
-            return;
-        }
-
-        // Gets antidot particle
-        gCvarList[CVAR_VEFFECTS_ANTIDOT_NAME].GetString(sParticle, sizeof(sParticle)); 
-        gCvarList[CVAR_VEFFECTS_ANTIDOT_ATTACH].GetString(sAttachment, sizeof(sAttachment)); 
+        // Shake a client screen
+        VEffectsShakeClientScreen(client, gCvarList.VEFFECTS_LEAP_SHAKE_AMP, gCvarList.VEFFECTS_LEAP_SHAKE_FREQUENCY, gCvarList.VEFFECTS_LEAP_SHAKE_DURATION);
     }
     
-    // Emit effect
-    VEffectSpawnParticle(clientIndex, sAttachment, sParticle, flDuration);
-}
-
-/**
- * Client has been leap jump.
- * 
- * @param clientIndex       The client index.
- **/
-void PlayerVEffectsOnClientJump(const int clientIndex)
-{
     // If jump effect disabled, then stop
-    if(!gCvarList[CVAR_VEFFECTS_LEAP].BoolValue) 
+    if (!gCvarList.VEFFECTS_LEAP.BoolValue) 
     {
         return;
     }
     
     // If the duration is zero, then stop
-    float flDuration = gCvarList[CVAR_VEFFECTS_LEAP_DURATION].FloatValue;
-    if(!flDuration)
+    float flDuration = gCvarList.VEFFECTS_LEAP_DURATION.FloatValue;
+    if (!flDuration)
     {
         return;
     }
@@ -225,9 +285,9 @@ void PlayerVEffectsOnClientJump(const int clientIndex)
     static char sAttachment[SMALL_LINE_LENGTH];
     
     // Gets jump particle
-    gCvarList[CVAR_VEFFECTS_LEAP_NAME].GetString(sParticle, sizeof(sParticle)); 
-    gCvarList[CVAR_VEFFECTS_LEAP_ATTACH].GetString(sAttachment, sizeof(sAttachment));
+    gCvarList.VEFFECTS_LEAP_NAME.GetString(sParticle, sizeof(sParticle)); 
+    gCvarList.VEFFECTS_LEAP_ATTACH.GetString(sAttachment, sizeof(sAttachment));
     
-    // Emit jump effect
-    VEffectSpawnParticle(clientIndex, sAttachment, sParticle, flDuration);
+    // Emit a jump effect
+    ParticlesCreate(client, sAttachment, sParticle, flDuration);
 }

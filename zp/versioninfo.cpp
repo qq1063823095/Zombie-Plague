@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          versioninfo.cpp
  *  Type:          Main 
  *  Description:   Version information.
  *
- *  Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)
+ *  Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,94 +20,75 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
- 
+
 /**
  * @section Modification information.
  **/
 #define PLUGIN_NAME         "Zombie Plague"
-#define PLUGIN_VERSION      "8.5.0"
+#define PLUGIN_VERSION      "X.037"
 #define PLUGIN_TAG          "zp"
 #define PLUGIN_CONFIG       "plugin.zombieplague"
 #define PLUGIN_AUTHOR       "qubka (Nikita Ushakov), Greyscale, Richard Helgeby"
-#define PLUGIN_COPYRIGHT    "Copyright (C) 2015-2018 Nikita Ushakov (Ireland, Dublin)"
-#define PLUGIN_BRANCH       "zp-8.5.0"
+#define PLUGIN_COPYRIGHT    "Copyright (C) 2015-2020 Nikita Ushakov (Ireland, Dublin)"
+#define PLUGIN_BRANCH       "master"
 #define PLUGIN_LINK         "https://forums.alliedmods.net/showthread.php?t=290657"
 #define PLUGIN_LICENSE      "GNU GPL, Version 3"
-#define PLUGIN_DATE         "10-December-2018T02:40:00-GMT+01:00"
+#define PLUGIN_DATE         "26-March-2020T16:50:00-GMT+00:00"
 /**
  * @endsection
  **/
 
 /**
- * Creates commands for plugin version. Called when commands are created.
+ * @brief Creates commands for version module.
  **/
-void VersionOnCommandsCreate(/*void*/)
+void VersionOnCommandInit(/*void*/)
 {
-    RegConsoleCmd("zp_version", VersionCommandCatched, "Prints version info about this plugin.");
+    RegConsoleCmd("zp_version", VersionOnCommandCatched, "Prints version info about this plugin.");
 }
 
 /**
- * Adds an informational string to the server public "tags".
+ * @brief Version module load function.
  **/
-void VersionOnCvarInit(/*void*/)
-{
-    // Adds core tag
-    FindConVar("sv_tags").SetString(PLUGIN_TAG, true);
-}
-
-/**
- * Load version info data.
- **/
-void VersionLoad(/*void*/)
+void VersionOnLoad(/*void*/)
 {
     // Print a version into the console
-    VersionCommandCatched(LANG_SERVER, LANG_SERVER);
+    VersionOnCommandCatched(LANG_SERVER, LANG_SERVER);
 }
 
 /**
- * Handles the <!zp_version> command. Called when a generic console command is invoked.
+ * Console command callback (zp_version)
+ * @brief Prints version info about this plugin.
  * 
- * @param clientIndex      The client index.
- * @param iArguments       The number of arguments that were in the argument string.
+ * @param client            The client index.
+ * @param iArguments        The number of arguments that were in the argument string.
  **/ 
-public Action VersionCommandCatched(const int clientIndex, const int iArguments)
+public Action VersionOnCommandCatched(int client, int iArguments)
 {
     // Initialize variables
-    static char sBuffer[PLATFORM_MAX_PATH+PLATFORM_MAX_PATH];
-    static char sLine[BIG_LINE_LENGTH];
+    static char sBuffer[HUGE_LINE_LENGTH]; sBuffer[0] = NULL_STRING[0];
+    static char sLine[BIG_LINE_LENGTH]; sLine[0] = NULL_STRING[0];
 
-    // Quick clear string buffer
-    sBuffer[0] = '\0'; sLine[0] = '\0';
-
-    #define FORMATSTRING "%24s: %s\n"
-
-    // Format strings
-    Format(sLine, sizeof(sLine), "\n%s\n", PLUGIN_NAME);
+    /// Format strings
+    FormatEx(sLine, sizeof(sLine), "\n%s\n", PLUGIN_NAME);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), "%s\n\n", PLUGIN_COPYRIGHT);
+    FormatEx(sLine, sizeof(sLine), "%s\n\n", PLUGIN_COPYRIGHT);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), FORMATSTRING, "Version", PLUGIN_VERSION);
+    FormatEx(sLine, sizeof(sLine), "%24s: %s\n", "Version", PLUGIN_VERSION);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), FORMATSTRING, "Last edit", PLUGIN_DATE);
+    FormatEx(sLine, sizeof(sLine), "%24s: %s\n", "Last edit", PLUGIN_DATE);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), FORMATSTRING, "License", PLUGIN_LICENSE);
+    FormatEx(sLine, sizeof(sLine), "%24s: %s\n", "License", PLUGIN_LICENSE);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), FORMATSTRING, "Link+", PLUGIN_LINK);
+    FormatEx(sLine, sizeof(sLine), "%24s: %s\n", "Link+", PLUGIN_LINK);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
-
-    Format(sLine, sizeof(sLine), FORMATSTRING, "Branch", PLUGIN_BRANCH);
+    FormatEx(sLine, sizeof(sLine), "%23s: %s\n", "Branch", PLUGIN_BRANCH);
     StrCat(sBuffer, sizeof(sBuffer), sLine);
 
     // Send information into the console
-    ReplyToCommand(clientIndex, sBuffer);
+    ReplyToCommand(client, sBuffer);
     return Plugin_Handled;
 }

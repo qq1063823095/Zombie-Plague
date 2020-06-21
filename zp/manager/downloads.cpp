@@ -1,13 +1,13 @@
 /**
  * ============================================================================
  *
- *  Zombie Plague Mod #3 Generation
+ *  Zombie Plague
  *
  *  File:          downloads.cpp
  *  Type:          Manager 
- *  Description:   Downloads table generator.
+ *  Description:   Downloads validation.
  *
- *  Copyright (C) 2015-2018 Greyscale, Richard Helgeby
+ *  Copyright (C) 2015-2020 Greyscale, Richard Helgeby
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,49 +20,75 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
  * ============================================================================
  **/
  
 /**
- * Array handle to store downloadtable config data.
+ * @section Download config data indexes.
  **/
-ArrayList arrayDownloads;
-
+enum
+{
+    DOWNLOADS_DATA_PATH
+};
 /**
- * Prepare all model/download data.
+ * @endsection
  **/
-void DownloadsLoad(/*void*/)
+ 
+/**
+ * @brief Prepare all download data.
+ **/
+void DownloadsOnLoad(/*void*/)
 {
     // Register config file
-    ConfigRegisterConfig(File_Downloads, Structure_List, CONFIG_FILE_ALIAS_DOWNLOADS);
+    ConfigRegisterConfig(File_Downloads, Structure_StringList, CONFIG_FILE_ALIAS_DOWNLOADS);
 
     // Gets downloads file path
-    static char sDownloadsPath[PLATFORM_MAX_PATH];
-    bool bExists = ConfigGetCvarFilePath(CVAR_CONFIG_PATH_DOWNLOADS, sDownloadsPath);
+    static char sPathDownloads[PLATFORM_LINE_LENGTH];
+    bool bExists = ConfigGetFullPath(CONFIG_FILE_ALIAS_DOWNLOADS, sPathDownloads, sizeof(sPathDownloads));
 
     // If file doesn't exist, then log and stop
-    if(!bExists)
+    if (!bExists)
     {
         // Log failure and stop plugin
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "Missing downloads file: \"%s\"", sDownloadsPath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Downloads, "Config Validation", "Missing downloads file: \"%s\"", sPathDownloads);
+        return;
     }
 
-    // Sets the path to the config file
-    ConfigSetConfigPath(File_Downloads, sDownloadsPath);
+    // Sets path to the config file
+    ConfigSetConfigPath(File_Downloads, sPathDownloads);
 
     // Load config from file and create array structure
-    bool bSuccess = ConfigLoadConfig(File_Downloads, arrayDownloads, PLATFORM_MAX_PATH);
+    bool bSuccess = ConfigLoadConfig(File_Downloads, gServerData.Downloads, PLATFORM_LINE_LENGTH);
 
     // Unexpected error, stop plugin
-    if(!bSuccess)
+    if (!bSuccess)
     {
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "Unexpected error encountered loading: %s", sDownloadsPath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Downloads, "Config Validation", "Unexpected error encountered loading: %s", sPathDownloads);
+        return;
     }
+    
+    // Now copy data to array structure
+    DownloadsOnCacheData();
+    
+    // Sets config data
+    ConfigSetConfigLoaded(File_Downloads, true);
+    ConfigSetConfigReloadFunc(File_Downloads, GetFunctionByName(GetMyHandle(), "DownloadsOnConfigReload"));
+    ConfigSetConfigHandle(File_Downloads, gServerData.Downloads);
+}
 
+/**
+ * @brief Caches download data from file into arrays.
+ **/
+void DownloadsOnCacheData(/*void*/)
+{
+    // Gets config file path
+    static char sPathDownloads[PLATFORM_LINE_LENGTH];
+    ConfigGetConfigPath(File_Downloads, sPathDownloads, sizeof(sPathDownloads));
+    
     // Log what download file that is loaded
-    LogEvent(true, LogType_Normal, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "Loading downloads from file \"%s\"", sDownloadsPath);
+    LogEvent(true, LogType_Normal, LOG_DEBUG, LogModule_Downloads, "Config Validation", "Loading downloads from file \"%s\"", sPathDownloads);
 
     // Initialize numbers of downloads
     int iDownloadCount;
@@ -70,38 +96,46 @@ void DownloadsLoad(/*void*/)
     int iDownloadUnValidCount;
     
     // Validate downloads config
-    int iDownloads = iDownloadCount = arrayDownloads.Length;
-    if(!iDownloads)
+    int iDownloads = iDownloadCount = gServerData.Downloads.Length;
+    if (!iDownloads)
     {
-        LogEvent(false, LogType_Fatal, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "No usable data found in downloads config file: \"%s\"", sDownloadsPath);
+        LogEvent(false, LogType_Fatal, LOG_GAME_EVENTS, LogModule_Downloads, "Config Validation", "No usable data found in downloads config file: \"%s\"", sPathDownloads);
+        return;
     }
 
     // i = download array index
-    for(int i = 0; i < iDownloads; i++)
+    for (int i = 0; i < iDownloads; i++)
     {
         // Gets download path
-        sDownloadsPath[0] = '\0'; arrayDownloads.GetString(i, sDownloadsPath, sizeof(sDownloadsPath));
+        gServerData.Downloads.GetString(i, sPathDownloads, sizeof(sPathDownloads));
 
         // If file exist
-        if(FileExists(sDownloadsPath) || FindCharInString(sDownloadsPath, '@', true) != -1) //! Fix for particles
+        if (FileExists(sPathDownloads) || FileExists(sPathDownloads, true)) 
         {
             // Add to server precache list
-            if(DownloadsOnPrecache(sDownloadsPath)) iDownloadValidCount++; else iDownloadUnValidCount++;
+            if (DownloadsOnPrecache(sPathDownloads)) iDownloadValidCount++; else iDownloadUnValidCount++;
         }
         // If doesn't exist, it might be directory ?
         else
         {
-            // Open directory
-            DirectoryListing hDirectory = OpenDirectory(sDownloadsPath);
+            // Opens directory
+            DirectoryListing hDirectory = OpenDirectory(sPathDownloads);
             
+            // If directory doesn't exist, try to open folder in .vpk
+            if (hDirectory == null)
+            {
+                // Opens directory
+                hDirectory = OpenDirectory(sPathDownloads, true);
+            }
+
             // If directory doesn't exist, then log, and stop
-            if(hDirectory == INVALID_HANDLE)
+            if (hDirectory == null)
             {
                 // Log download error info
-                LogEvent(false, LogType_Error, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "Incorrect path \"%s\"", sDownloadsPath);
+                LogEvent(false, LogType_Error, LOG_GAME_EVENTS, LogModule_Downloads, "Config Validation", "Incorrect path \"%s\"", sPathDownloads);
                 
                 // Remove download from array
-                arrayDownloads.Erase(i);
+                gServerData.Downloads.Erase(i);
 
                 // Subtract one from count
                 iDownloads--;
@@ -112,35 +146,19 @@ void DownloadsLoad(/*void*/)
             }
     
             // Initialize variables
-            static char sFile[PLATFORM_MAX_PATH];
-            
-            // Initialize types
-            FileType hType;
+            static char sFile[PLATFORM_LINE_LENGTH]; FileType hType;
             
             // Search any files in the directory and precache them
-            while(hDirectory.GetNext(sFile, sizeof(sFile), hType)) 
+            while (hDirectory.GetNext(sFile, sizeof(sFile), hType)) 
             {
-                // Switch type
-                switch(hType) 
+                // Validate file type
+                if (hType == FileType_File) 
                 {
-                    case FileType_File :
-                    {
-                        // Format full path to file
-                        Format(sFile, sizeof(sFile), "%s%s", sDownloadsPath, sFile);
-                        
-                        // Add to server precache list
-                        if(DownloadsOnPrecache(sFile)) iDownloadValidCount++; else iDownloadUnValidCount++;
-                    }
+                    // Format full path to file
+                    Format(sFile, sizeof(sFile), "%s%s", sPathDownloads, sFile);
                     
-                    /*case FileType_Unknown :
-                    {
-                        
-                    }
-                    
-                    case FileType_Directory : 
-                    {
-                        
-                    }*/
+                    // Add to server precache list
+                    if (DownloadsOnPrecache(sFile)) iDownloadValidCount++; else iDownloadUnValidCount++;
                 }
             }
         
@@ -150,66 +168,68 @@ void DownloadsLoad(/*void*/)
     }
     
     // Log download validation info
-    LogEvent(true, LogType_Normal, LOG_CORE_EVENTS, LogModule_Downloads, "Config Validation", "Total blocks: %d | Unsuccessful blocks: %d | Total: %d | Successful: %d | Unsuccessful: %d", iDownloadCount, iDownloadCount - iDownloads, iDownloadValidCount + iDownloadUnValidCount, iDownloadValidCount, iDownloadUnValidCount);
-    
-    // Sets config data
-    ConfigSetConfigLoaded(File_Downloads, true);
-    ConfigSetConfigReloadFunc(File_Downloads, GetFunctionByName(GetMyHandle(), "DownloadsOnConfigReload"));
-    ConfigSetConfigHandle(File_Downloads, arrayDownloads);
+    LogEvent(true, LogType_Normal, LOG_DEBUG_DETAIL, LogModule_Downloads, "Config Validation", "Total blocks: \"%d\" | Unsuccessful blocks: \"%d\" | Total: \"%d\" | Successful: \"%d\" | Unsuccessful: \"%d\"", iDownloadCount, iDownloadCount - iDownloads, iDownloadValidCount + iDownloadUnValidCount, iDownloadValidCount, iDownloadUnValidCount);
 }
 
 /**
- * Called when configs are being reloaded.
- * 
- * @param iConfig           The config being reloaded. (only if 'all' is false)
+ * @brief Called when configs are being reloaded.
  **/
-public void DownloadsOnConfigReload(ConfigFile iConfig)
+public void DownloadsOnConfigReload(/*void*/)
 {
-    // Reload download config
-    DownloadsLoad();
+    // Reloads download config
+    DownloadsOnLoad();
 }
 
+/*
+ * Stocks downloads API.
+ */
+
 /**
- * Adds file to the download table.
+ * @brief Adds file to the download table.
  *
  * @param sPath             The path to file.
  * @return                  True or false.
  **/
-stock bool DownloadsOnPrecache(const char[] sPath)
+bool DownloadsOnPrecache(char[] sPath)
 {
     // Finds the first occurrence of a character in a string
     int iFormat = FindCharInString(sPath, '.', true);
     
     // If path is don't have format, then log, and stop
-    if(iFormat == -1)
+    if (iFormat == -1)
     {
-        LogEvent(false, LogType_Error, LOG_CORE_EVENTS, LogModule_Engine, "Config Validation", "Missing file format: %s", sPath);
+        LogEvent(false, LogType_Error, LOG_GAME_EVENTS, LogModule_Engine, "Config Validation", "Missing file format: %s", sPath);
         return false;
     }
     
     // Validate sound format
-    if(!strcmp(sPath[iFormat], ".mp3", false) || !strcmp(sPath[iFormat], ".wav", false))
+    if (!strcmp(sPath[iFormat], ".mp3", false) || !strcmp(sPath[iFormat], ".wav", false))
     {
         // Precache sound
-        return fnPrecacheSoundQuirk(sPath);
+        return SoundsPrecacheQuirk(sPath);
     }
     // Validate model format
-    else if(!strcmp(sPath[iFormat], ".mdl", false))
+    else if (!strcmp(sPath[iFormat], ".mdl", false))
     {
         // Precache model
-        return ModelsPrecacheStatic(sPath) ? true : false;   
+        return DecryptPrecacheModel(sPath) ? true : false;   
     }
     // Validate particle format 
-    else if(!strcmp(sPath[iFormat], ".pcf", false))
+    else if (!strcmp(sPath[iFormat], ".pcf", false))
     {
         // Precache paricle
-        return ModelsPrecacheParticle(sPath);
+        return DecryptPrecacheParticle(sPath) ? true : false; 
     }
     // Validate meterial format
-    else if(!strcmp(sPath[iFormat], ".vmt", false))
+    else if (!strcmp(sPath[iFormat], ".vmt", false))
     {
         // Precache textures
-        return ModelsPrecacheTextures(sPath);
+        return DecryptPrecacheTextures("self", sPath);
+    }
+    else
+    {
+        // Add file to download table 
+        AddFileToDownloadsTable(sPath);
     }
     
     // Return on success
